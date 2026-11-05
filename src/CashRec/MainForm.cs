@@ -27,14 +27,13 @@ public sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Microsoft YaHei UI", 10);
         BackColor = Color.FromArgb(246, 248, 250);
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), RowCount = 7, ColumnCount = 1 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), RowCount = 6, ColumnCount = 1 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 5));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         layout.Controls.Add(new Label { Text = "Cash Rec", Font = new Font(Font.FontFamily, 22, FontStyle.Bold), AutoSize = true }, 0, 0);
         var workspaceRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
         workspaceRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
@@ -51,7 +50,6 @@ public sealed class MainForm : Form
         layout.Controls.Add(progress, 0, 3);
         layout.Controls.Add(statusText, 0, 4);
         layout.Controls.Add(resultLabel, 0, 5);
-        layout.Controls.Add(new Label { Text = "Windows x64  ·  v0.1.0", ForeColor = Color.DimGray, AutoSize = true }, 0, 6);
         Controls.Add(layout);
         if (File.Exists(settingsPath)) workspaceBox.Text = File.ReadAllText(settingsPath);
         statusText.Text = "选择业务工作目录和日期，然后检查文件。";
