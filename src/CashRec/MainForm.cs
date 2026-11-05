@@ -11,6 +11,7 @@ public sealed class MainForm : Form
     readonly Button runButton = new() { Name = "runButton", AccessibleName = "runButton", Text = "生成基础报表", AutoSize = true };
     readonly Button importButton = new() { Name = "importButton", AccessibleName = "importButton", Text = "导入文件", AutoSize = true };
     readonly Button openButton = new() { Name = "openButton", AccessibleName = "openButton", Text = "打开结果位置", AutoSize = true, Enabled = false };
+    readonly Button browseButton = new() { Name = "browseButton", Text = "选择…", AutoSize = true };
     readonly TextBox statusText = new() { Name = "statusText", AccessibleName = "statusText", Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false };
     readonly Label resultLabel = new() { Name = "resultLabel", AutoSize = true, Text = "" };
     readonly ProgressBar progress = new() { Name = "progressBar", Dock = DockStyle.Top, Height = 5 };
@@ -41,8 +42,7 @@ public sealed class MainForm : Form
         workspaceRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
         workspaceRow.Controls.Add(new Label { Text = "工作目录", Anchor = AnchorStyles.Left, AutoSize = true }, 0, 0);
         workspaceRow.Controls.Add(workspaceBox, 1, 0);
-        var browse = new Button { Name = "browseButton", Text = "选择…", AutoSize = true };
-        workspaceRow.Controls.Add(browse, 2, 0);
+        workspaceRow.Controls.Add(browseButton, 2, 0);
         layout.Controls.Add(workspaceRow, 0, 1);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(0, 8, 0, 0) };
         actions.Controls.AddRange([businessDatePicker, importButton, checkButton, runButton, openButton]);
@@ -53,7 +53,7 @@ public sealed class MainForm : Form
         Controls.Add(layout);
         if (File.Exists(settingsPath)) workspaceBox.Text = File.ReadAllText(settingsPath);
         statusText.Text = "选择业务工作目录和日期，然后检查文件。";
-        browse.Click += (_, _) =>
+        browseButton.Click += (_, _) =>
         {
             using var dialog = new FolderBrowserDialog { Description = "选择业务工作目录", UseDescriptionForTitle = true };
             if (dialog.ShowDialog(this) == DialogResult.OK) workspaceBox.Text = dialog.SelectedPath;
@@ -123,7 +123,7 @@ public sealed class MainForm : Form
         if (busy || !ValidWorkspace()) return;
         busy = true;
         checkButton.Enabled = runButton.Enabled = importButton.Enabled = false;
-        businessDatePicker.Enabled = workspaceBox.Enabled = false;
+        businessDatePicker.Enabled = workspaceBox.Enabled = browseButton.Enabled = false;
         progress.Style = ProgressBarStyle.Marquee;
         resultLabel.Text = "处理中…";
         var report = new Progress<string>(message => statusText.AppendText(Environment.NewLine + message));
@@ -142,7 +142,7 @@ public sealed class MainForm : Form
         {
             busy = false;
             checkButton.Enabled = runButton.Enabled = importButton.Enabled = true;
-            businessDatePicker.Enabled = workspaceBox.Enabled = true;
+            businessDatePicker.Enabled = workspaceBox.Enabled = browseButton.Enabled = true;
             progress.Style = ProgressBarStyle.Blocks;
         }
     }

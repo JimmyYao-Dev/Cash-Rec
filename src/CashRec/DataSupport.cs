@@ -31,7 +31,7 @@ public static class DataValue
 
 public static class CsvData
 {
-    public static IEnumerable<Dictionary<string, string>> Read(string path, string? headerMarker = null)
+    public static IEnumerable<Dictionary<string, string>> Read(string path, string? headerMarker = null, IReadOnlyCollection<string>? requiredHeaders = null)
     {
         using var parser = new TextFieldParser(path, Encoding.UTF8, true);
         parser.TextFieldType = FieldType.Delimited;
@@ -46,8 +46,12 @@ public static class CsvData
             {
                 if (headerMarker != null && !values.Any(v => DataValue.Normalize(v) == DataValue.Normalize(headerMarker))) continue;
                 headers = values.Select(x => x.Trim().Trim('\uFEFF')).ToArray();
-                if (headers.Distinct(StringComparer.OrdinalIgnoreCase).Count() != headers.Length)
+                var normalizedHeaders = headers.Select(DataValue.Normalize).ToHashSet(StringComparer.Ordinal);
+                if (normalizedHeaders.Count != headers.Length)
                     throw new InvalidDataException($"{Path.GetFileName(path)}：表头重复");
+                var missing = requiredHeaders?.Where(name => !normalizedHeaders.Contains(DataValue.Normalize(name))).ToArray() ?? [];
+                if (missing.Length > 0)
+                    throw new InvalidDataException($"{Path.GetFileName(path)}：缺少表头 {string.Join(", ", missing)}");
                 continue;
             }
             if (values.Length > headers.Length) throw new InvalidDataException($"{Path.GetFileName(path)}：行字段多于表头");
@@ -86,13 +90,7 @@ public sealed class DailyRates
             {
                 var currency = dataRow.Cell(currencyCell.Address.ColumnNumber).GetString().Trim();
                 if (currency.Length == 0) continue;
-                var rateData = dataRow.Cell(rateCell.Address.ColumnNumber);
-                if (rateData.HasFormula && rateData.CachedValue.Type != XLDataType.Number)
-                    throw new InvalidDataException($"汇率：{currency} 的公式缺少有效数值缓存");
-                var text = rateData.HasFormula ? rateData.CachedValue.GetNumber().ToString("R", CultureInfo.InvariantCulture)
-                    : rateData.DataType == XLDataType.Number ? rateData.GetDouble().ToString("R", CultureInfo.InvariantCulture)
-                    : rateData.GetString();
-                var rate = DataValue.Decimal(text, "汇率 " + currency);
+                var rate = ExcelNumbers.Read(dataRow.Cell(rateCell.Address.ColumnNumber), "汇率 " + currency);
                 if (rate <= 0) throw new InvalidDataException($"汇率：{currency} 必须大于零");
                 if (rates.TryGetValue(currency, out var previous) && previous != rate) throw new InvalidDataException($"汇率：{currency} 有冲突记录");
                 rates[currency] = rate;

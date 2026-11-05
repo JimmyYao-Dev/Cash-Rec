@@ -19,16 +19,9 @@ public sealed class Mt4TransactionAdapter : IReportAdapter
         ]);
         var excluded = new Dictionary<string, int>(StringComparer.Ordinal);
         var sourceRecords = 0;
-        var headerChecked = false;
-
-        foreach (var row in CsvData.Read(path))
+        foreach (var row in CsvData.Read(path, requiredHeaders: ["date", "jurisdiction", "accounting_comment", "comment", "fund_amount", "trading_server_currency"]))
         {
             sourceRecords++;
-            if (!headerChecked)
-            {
-                RequireHeaders(row, path);
-                headerChecked = true;
-            }
             if (sourceRecords % 10000 == 0)
                 context.Progress?.Invoke($"处理 MT4 交易：{sourceRecords:N0} 条源记录");
 
@@ -91,6 +84,7 @@ public sealed class Mt4TransactionAdapter : IReportAdapter
             });
         }
 
+        if (sourceRecords == 0) table.Diagnostics.Add(new("Warning", Source, "CSV表头有效，但没有MT4交易数据记录"));
         foreach (var (reason, count) in excluded.OrderBy(pair => pair.Key, StringComparer.Ordinal))
             table.Diagnostics.Add(new("Warning", Source, $"排除 {count} 条记录：{reason}"));
         table.Diagnostics.Add(new("Info", Source,
@@ -107,12 +101,4 @@ public sealed class Mt4TransactionAdapter : IReportAdapter
         return key == null ? "" : row[key];
     }
 
-    static void RequireHeaders(IReadOnlyDictionary<string, string> row, string path)
-    {
-        string[] required = ["date", "jurisdiction", "accounting_comment", "comment", "fund_amount", "trading_server_currency"];
-        var missing = required.Where(name => !row.Keys.Any(key =>
-            DataValue.Normalize(key) == DataValue.Normalize(name))).ToArray();
-        if (missing.Length > 0)
-            throw new InvalidDataException($"{Path.GetFileName(path)}：缺少 MT4 交易表头 {string.Join(", ", missing)}");
-    }
 }

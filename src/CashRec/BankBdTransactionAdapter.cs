@@ -72,7 +72,7 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
                     var rational = Text("Rational");
                     var currency = Text("Currency").Trim().ToUpperInvariant();
                     if (currency.Length == 0) throw new InvalidDataException($"{source}：Currency 为空");
-                    var amount = ReadAmount(row.Cell(input.Headers["amount"]), source);
+                    var amount = ExcelNumbers.Read(row.Cell(input.Headers["amount"]), source + " Amount");
                     var rate = context.Rates.Get(currency);
                     var transactionType = ClassifyTransaction(rational, comment, type);
                     var sourceDate = input.Headers.TryGetValue("date", out var dateColumn)
@@ -138,18 +138,6 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
         };
     }
 
-    static decimal ReadAmount(IXLCell cell, string source)
-    {
-        if (cell.HasFormula)
-        {
-            if (cell.CachedValue.Type != XLDataType.Number)
-                throw new InvalidDataException($"{source} Amount 公式缺少有效数值缓存");
-            return DataValue.Decimal(cell.CachedValue.GetNumber().ToString("R", CultureInfo.InvariantCulture), source + " Amount");
-        }
-        if (cell.DataType == XLDataType.Number)
-            return DataValue.Decimal(cell.GetDouble().ToString("R", CultureInfo.InvariantCulture), source + " Amount");
-        return DataValue.Decimal(cell.GetString(), source + " Amount");
-    }
 
     static string ReadText(IXLCell cell, string source)
     {

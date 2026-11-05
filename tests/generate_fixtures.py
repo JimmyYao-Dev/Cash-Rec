@@ -22,6 +22,7 @@ SCENARIOS = (
     "good", "ambiguous-regulator", "zero-rate", "missing-rate",
     "bank-conflict", "missing-psp-date", "missing-input", "unknown-bank",
     "no-previous", "corrupt-bank-bd",
+    "equity-bad-header", "mt4-bad-header", "bank-bad-header", "bank-empty-classification",
 )
 EQUITY_HEADERS = [
     "dt_report", "report_jurisdiction", "login", "is_ib", "group", "user_id",
@@ -220,6 +221,20 @@ def apply_scenario(root: Path, scenario: str) -> None:
             csv.writer(handle).writerow(["Unknown synthetic account", "001-9999", "USD", 0, 0, 0, 0, 12])
     elif scenario == "corrupt-bank-bd":
         (needed / "PSP+BANK/BANK BD.xlsx").write_text("Deliberately invalid synthetic workbook", encoding="utf-8")
+    elif scenario == "equity-bad-header":
+        write_csv(needed / "MT4/Risk/Accounting Equity Report.csv", ["dt_report", "report_jurisdiction"], [])
+    elif scenario == "mt4-bad-header":
+        write_csv(needed / "MT4/MT4/Transaction Summary Report.csv", ["date", "jurisdiction"], [])
+    elif scenario == "bank-bad-header":
+        write_csv(needed / "Bank/NAB AU.csv", ["Account Number", "Currency"], [])
+    elif scenario == "bank-empty-classification":
+        path = root / "db/tmc/account_mapping.xlsx"
+        book = load_workbook(path)
+        # Both aliases agree on empty values: agreement must not imply valid classification.
+        for row in (2, 3):
+            for column in (4, 6, 8):
+                book["BANK MAPPING"].cell(row, column).value = None
+        book.save(path)
 
 
 def main() -> None:
