@@ -28,9 +28,12 @@ public static class BalanceWorkbookReader
     });
 
     public static List<Dictionary<string, object?>> ReadRows(string path, string sheetName) =>
-        ReadPackage(path, archive => ReadRowsCore(archive, path, sheetName));
+        ReadPackage(path, archive => ReadRowsCore(archive, path, sheetName, null));
 
-    static List<Dictionary<string, object?>> ReadRowsCore(ZipArchive archive, string path, string sheetName)
+    public static List<Dictionary<string, object?>> ReadRows(string path, string sheetName, IReadOnlyCollection<string> selectedColumns) =>
+        ReadPackage(path, archive => ReadRowsCore(archive, path, sheetName, selectedColumns));
+
+    static List<Dictionary<string, object?>> ReadRowsCore(ZipArchive archive, string path, string sheetName, IReadOnlyCollection<string>? selectedColumns)
     {
         var workbook = ReadXml(archive, "xl/workbook.xml");
         var sheet = workbook.Descendants().SingleOrDefault(e => e.Name.LocalName == "sheet" && (string?)e.Attribute("name") == sheetName)
@@ -49,36 +52,45 @@ public static class BalanceWorkbookReader
         if (targetUri.Host != "cashrec.invalid") throw new InvalidDataException($"{sheetName}：工作表关系指向外部位置");
         var worksheetPath = Uri.UnescapeDataString(targetUri.AbsolutePath).TrimStart('/');
         var worksheet = ReadXml(archive, worksheetPath);
-        var sharedStrings = ReadSharedStrings(archive, worksheet);
         var date1904 = workbook.Descendants().Where(e => e.Name.LocalName == "workbookPr")
             .Any(e => (string?)e.Attribute("date1904") is "1" or "true");
+        var sheetRows = worksheet.Descendants().Where(e => e.Name.LocalName == "sheetData").Elements()
+            .Where(e => e.Name.LocalName == "row").ToList();
         var rows = new List<Dictionary<string, object?>>();
         Dictionary<int, string>? headers = null;
-        var recordNumber = 0;
-        foreach (var row in worksheet.Descendants().Where(e => e.Name.LocalName == "sheetData").Elements().Where(e => e.Name.LocalName == "row"))
+        var headerIndex = -1;
+        for (var index = 0; index < sheetRows.Count; index++)
         {
-            recordNumber++;
-            var cells = IndexedCells(row);
-            if (headers == null)
+            var cells = IndexedCells(sheetRows[index]);
+            var headerStrings = ReadSharedStrings(archive, cells.Values);
+            var names = cells.Select(pair => (pair.Key, Value: ReadCell(pair.Value, headerStrings, "", sheetName))).Where(pair => pair.Value != null).ToList();
+            if (names.Count == 0) continue;
+            headers = new Dictionary<int, string>();
+            var normalized = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var (column, value) in names)
             {
-                var names = cells.Select(pair => (pair.Key, Value: ReadCell(pair.Value, sharedStrings, "", sheetName))).Where(pair => pair.Value != null).ToList();
-                if (names.Count == 0) continue;
-                headers = new Dictionary<int, string>();
-                var normalized = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var (column, value) in names)
-                {
-                    if (value is not string text || string.IsNullOrWhiteSpace(text))
-                        throw new InvalidDataException($"{sheetName}：表头必须为非空文本，列 {column}");
-                    text = text.Trim();
-                    if (!normalized.Add(DataValue.Normalize(text))) throw new InvalidDataException($"{sheetName}：重复表头 {text}");
-                    headers.Add(column, text);
-                }
-                continue;
+                if (value is not string text || string.IsNullOrWhiteSpace(text))
+                    throw new InvalidDataException($"{sheetName}：表头必须为非空文本，列 {column}");
+                text = text.Trim();
+                if (!normalized.Add(DataValue.Normalize(text))) throw new InvalidDataException($"{sheetName}：重复表头 {text}");
+                headers.Add(column, text);
             }
+            headerIndex = index;
+            break;
+        }
+        if (headers == null) throw new InvalidDataException($"{sheetName}：没有可识别的表头行");
+        if (selectedColumns != null) headers = ProjectHeaders(headers, selectedColumns, sheetName);
+        var dataRows = sheetRows.Skip(headerIndex + 1).Select(IndexedCells).ToList();
+        var dataCells = dataRows.SelectMany(row => row.Where(pair => selectedColumns == null || headers.ContainsKey(pair.Key)).Select(pair => pair.Value));
+        var sharedStrings = ReadSharedStrings(archive, dataCells);
+        for (var index = 0; index < dataRows.Count; index++)
+        {
+            var recordNumber = headerIndex + index + 2;
             var result = headers.Values.ToDictionary(header => header, _ => (object?)null, StringComparer.OrdinalIgnoreCase);
             var hasValue = false;
-            foreach (var (column, cell) in cells)
+            foreach (var (column, cell) in dataRows[index])
             {
+                if (selectedColumns != null && !headers.ContainsKey(column)) continue;
                 var header = headers.GetValueOrDefault(column) ?? "";
                 var value = ReadCell(cell, sharedStrings, header, sheetName);
                 if (value == null) continue;
@@ -89,8 +101,21 @@ public static class BalanceWorkbookReader
             }
             if (hasValue) rows.Add(result);
         }
-        if (headers == null) throw new InvalidDataException($"{sheetName}：没有可识别的表头行");
         return rows;
+    }
+
+    static Dictionary<int, string> ProjectHeaders(Dictionary<int, string> headers, IReadOnlyCollection<string> selectedColumns, string sheetName)
+    {
+        if (selectedColumns.Count == 0) throw new InvalidDataException($"{sheetName}：未指定需要读取的字段");
+        var actualColumns = headers.ToDictionary(pair => DataValue.Normalize(pair.Value), pair => pair.Key, StringComparer.Ordinal);
+        var projected = new Dictionary<int, string>();
+        foreach (var name in selectedColumns)
+        {
+            if (!actualColumns.TryGetValue(DataValue.Normalize(name), out var column))
+                throw new InvalidDataException($"{sheetName}：缺少所需表头 {name}");
+            if (!projected.TryAdd(column, name)) throw new InvalidDataException($"{sheetName}：重复请求字段 {name}");
+        }
+        return projected;
     }
 
     static FileStream OpenFile(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -139,10 +164,10 @@ public static class BalanceWorkbookReader
         return result;
     }
 
-    static Dictionary<int, string> ReadSharedStrings(ZipArchive archive, XDocument worksheet)
+    static Dictionary<int, string> ReadSharedStrings(ZipArchive archive, IEnumerable<XElement> cells)
     {
         var needed = new HashSet<int>();
-        foreach (var cell in worksheet.Descendants().Where(e => e.Name.LocalName == "c" && (string?)e.Attribute("t") == "s"))
+        foreach (var cell in cells.Where(e => (string?)e.Attribute("t") == "s"))
         {
             var value = cell.Elements().FirstOrDefault(e => e.Name.LocalName == "v")?.Value;
             if (value == null) continue;
