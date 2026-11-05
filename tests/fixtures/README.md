@@ -50,6 +50,8 @@ representation differences; it must not introduce business rounding rules.
 - IB and Standard use the same USD currency in separate groups.
 - The original CSV dates differ from the selected directory date.
 - Daily rates are divisors: 125 AUD / 1.25 = 100 USD; 200 USC / 100 = 2 USD.
+- Rate `Symb` contains the currency code; `Currency` contains a human-readable
+  label. This matches the actual rate-input structure and checks code selection.
 - NAB headers occur on row 8 after a sep declaration and a misleading total.
 - Duplicate bank aliases classify the same leading-zero account once.
 - Bank Clients/Settle and Insto/Retail/Wholesale classifications remain distinct.
