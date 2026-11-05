@@ -6,6 +6,7 @@ param(
  [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
  [ValidateSet('Complete','Partial','Failure','PreflightReady','PreflightFailure')][string]$ExpectedOutcome='Complete',
  [int]$TimeoutSeconds=120,
+ [string]$CaseScale='synthetic-small',
  [switch]$PreflightOnly,
  [string]$ImportFile,
  [switch]$KeepOpen
@@ -80,9 +81,11 @@ $InstalledExe=(Resolve-Path -LiteralPath $InstalledExe).Path
 $Workspace=(Resolve-Path -LiteralPath $Workspace).Path
 New-Item -ItemType Directory -Path $EvidenceDirectory -Force|Out-Null
 $EvidenceDirectory=(Resolve-Path -LiteralPath $EvidenceDirectory).Path
-$process=$null;$window=$null
+$process=$null;$window=$null;$launchWatch=$null;$runWatch=$null
 $result=[ordered]@{Entry='Installed real GUI via UI Automation';Executable=$InstalledExe;Workspace=$Workspace;BusinessDate=$BusinessDate.ToString('yyyy-MM-dd');Expected=$ExpectedOutcome;Passed=$false}
+$result.Measurements=[ordered]@{CaseScale=$CaseScale;OS=[Environment]::OSVersion.VersionString;Architecture=$env:PROCESSOR_ARCHITECTURE;AppFileVersion=[Diagnostics.FileVersionInfo]::GetVersionInfo($InstalledExe).FileVersion;InstalledExecutableBytes=(Get-Item -LiteralPath $InstalledExe).Length;LaunchToWindowMilliseconds=$null;RunToDiagnosticMilliseconds=$null;PeakWorkingSetBytes=$null;PreparedInputFiles=$null;PreparedInputBytes=$null}
 try {
+ $launchWatch=[Diagnostics.Stopwatch]::StartNew()
  $process=Start-Process -FilePath $InstalledExe -PassThru
  $deadline=[DateTime]::UtcNow.AddSeconds(30)
  $condition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty,[int]$process.Id)
@@ -91,6 +94,8 @@ try {
   if($null -eq $window){Start-Sleep -Milliseconds 200}
  }while($null -eq $window -and [DateTime]::UtcNow -lt $deadline)
  if($null -eq $window){throw 'Installed window unavailable. On Windows, run this harness in the interactive user desktop; the restricted sandbox desktop cannot see user windows.'}
+ $launchWatch.Stop()
+ $result.Measurements.LaunchToWindowMilliseconds=[math]::Round($launchWatch.Elapsed.TotalMilliseconds,1)
  $workspaceControl=Find-Control $window 'workspaceBox'
  $workspaceControl.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($Workspace)
  $dateControl=Find-Control $window 'businessDatePicker'
@@ -141,12 +146,16 @@ try {
  $preflight=Wait-Diagnostic $start $window $check
  if(([datetime]$preflight.Value.BusinessDate).Date -ne $BusinessDate.Date){throw 'The real date control did not accept the requested date.'}
  $result.Preflight=$preflight.Value
+ $preparedFiles=@($preflight.Value.Inputs.PSObject.Properties|ForEach-Object{Get-Item -LiteralPath $_.Value -ErrorAction SilentlyContinue})
+ $result.Measurements.PreparedInputFiles=$preparedFiles.Count
+ $result.Measurements.PreparedInputBytes=($preparedFiles|Measure-Object -Property Length -Sum).Sum
  Capture-Window $window (Join-Path $EvidenceDirectory '01-preflight.png')
  if($PreflightOnly){
   $outcome=if($preflight.Value.CanRun){'PreflightReady'}else{'PreflightFailure'}
  }else{
   $run=Find-Control $window 'runButton'
   $start=[DateTime]::UtcNow
+  $runWatch=[Diagnostics.Stopwatch]::StartNew()
   Invoke-Control $run
   $runDiagnostic=$null
   $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -156,6 +165,8 @@ try {
    if($null -eq $runDiagnostic){Start-Sleep -Milliseconds 200}
   }while($null -eq $runDiagnostic -and [DateTime]::UtcNow -lt $deadline)
   if($null -eq $runDiagnostic){throw 'The generated report diagnostic was not observed.'}
+  $runWatch.Stop()
+  $result.Measurements.RunToDiagnosticMilliseconds=[math]::Round($runWatch.Elapsed.TotalMilliseconds,1)
   $result.DiagnosticFile=$runDiagnostic.File
   $result.Run=$runDiagnostic.Value
   $outcome=if($runDiagnostic.Value.Complete){'Complete'}elseif($runDiagnostic.Value.Output){'Partial'}else{'Failure'}
@@ -163,6 +174,8 @@ try {
  }
  $result.Observed=$outcome
  $result.Status=Get-Text (Find-Control $window 'statusText')
+ $process.Refresh()
+ $result.Measurements.PeakWorkingSetBytes=$process.PeakWorkingSet64
  $result.Passed=$outcome -eq $ExpectedOutcome
  if(-not $result.Passed){throw "Expected $ExpectedOutcome but installed GUI reported $outcome"}
  Write-Json (Join-Path $EvidenceDirectory 'ui-result.json') $result

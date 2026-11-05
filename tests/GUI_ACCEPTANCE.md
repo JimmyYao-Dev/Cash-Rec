@@ -31,6 +31,10 @@ For an intermediate adapter use `--stage current --sheets Equity` (or `Bank`, `P
 
 The numerical reader tolerance of 1e-8 handles Excel binary serialization only. It does not introduce a business rounding policy or a reconciliation pass threshold.
 
+## Measured small-fixture baseline
+
+The GUI harness records executable size/version, OS/architecture, prepared input file count/bytes, launch-to-observed-window elapsed time, run-button invocation-to-observed-completion-diagnostic elapsed time, and the application process peak working-set bytes. Pass `-CaseScale` to identify the case (default `synthetic-small`). UI Automation observation time and polling are included; these values are not engine-only benchmarks. Preflight-only runs leave the run duration unset. No unmeasured latency, memory or throughput threshold is invented. This small-fixture baseline does not replace the later large-input performance ticket.
+
 ## Actual Excel edit
 
 Run `tests/Invoke-ExcelFormulaAcceptance.ps1 -Workbook <generated-file> -Oracle tests/fixtures/expected.json -EvidenceDirectory <evidence-folder>` in the same interactive desktop. It creates a new, visible Excel process and verifies its PID differs from every pre-existing Excel process before opening or editing the synthetic workbook. Existing user instances are never closed or changed.
