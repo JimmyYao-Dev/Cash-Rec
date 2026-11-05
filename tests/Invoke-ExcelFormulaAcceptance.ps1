@@ -15,6 +15,7 @@ public static class CashRecExcelWindow {
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
  [StructLayout(LayoutKind.Sequential)] public struct Rect {public int Left,Top,Right,Bottom;}
  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd,out Rect rect);
+ [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd,IntPtr hdc,uint flags);
 }
 '@
 }
@@ -78,7 +79,14 @@ try{
  [void][CashRecExcelWindow]::GetWindowRect([IntPtr]$excel.Hwnd,[ref]$rect)
  $bitmap=[Drawing.Bitmap]::new($rect.Right-$rect.Left,$rect.Bottom-$rect.Top)
  $graphics=[Drawing.Graphics]::FromImage($bitmap)
- try{$graphics.CopyFromScreen($rect.Left,$rect.Top,0,0,$bitmap.Size);$stream=[IO.MemoryStream]::new();try{$bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png);[IO.File]::WriteAllBytes((Join-Path $EvidenceDirectory '03-excel-dep-pnl.png'),$stream.ToArray())}finally{$stream.Dispose()}}finally{$graphics.Dispose();$bitmap.Dispose()}
+ try{
+  $dc=$graphics.GetHdc()
+  try{$captured=[CashRecExcelWindow]::PrintWindow([IntPtr]$excel.Hwnd,$dc,2)}finally{$graphics.ReleaseHdc($dc)}
+  if(-not $captured){throw 'Could not capture the owned Excel window; no desktop screenshot will be substituted.'}
+  $stream=[IO.MemoryStream]::new()
+  try{$bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png);[IO.File]::WriteAllBytes((Join-Path $EvidenceDirectory '03-excel-dep-pnl.png'),$stream.ToArray())}finally{$stream.Dispose()}
+ }finally{$graphics.Dispose();$bitmap.Dispose()}
+ $result.ScreenshotCapture='PrintWindow on the owned Excel window'
  [IO.File]::WriteAllText((Join-Path $EvidenceDirectory 'excel-result.json'),($result|ConvertTo-Json -Depth 10),[Text.UTF8Encoding]::new($false))
  if(-not $result.Passed){throw 'Actual Excel recalculation differs from independent expected result'}
  $result|ConvertTo-Json -Depth 10
