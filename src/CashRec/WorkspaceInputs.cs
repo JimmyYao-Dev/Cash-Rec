@@ -34,9 +34,8 @@ public static class WorkspaceInputs
             return new(date, "", inputs, "", [new("Error", "工作目录", "请选择业务工作目录")]);
         var root = Path.GetFullPath(workspace);
         var directory = DateDirectory(root, date);
-        var folderName = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar));
-        if (DateTime.TryParseExact(folderName, "yyyy.MM.dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var folderDate) && folderDate.Date != date.Date)
-            diagnostics.Add(new("Error", "日期", $"选中目录为 {folderName}，与业务日期 {date:yyyy.MM.dd} 不一致"));
+        var mismatch = DateMismatch(directory, date);
+        if (mismatch != null) diagnostics.Add(new("Error", "日期", mismatch));
         if (!Directory.Exists(directory)) diagnostics.Add(new("Error", "日期目录", $"缺少 {directory}"));
         foreach (var definition in Definitions)
         {
@@ -80,6 +79,9 @@ public static class WorkspaceInputs
 
     public static string Import(string workspace, DateTime date, string source)
     {
+        var directory = DateDirectory(workspace, date);
+        var mismatch = DateMismatch(directory, date);
+        if (mismatch != null) throw new InvalidDataException(mismatch);
         var name = Path.GetFileName(source);
         string target;
         if (name.Equals("account_mapping.xlsx", StringComparison.OrdinalIgnoreCase)) target = Path.Combine(Path.GetFullPath(workspace), "config", name);
@@ -87,12 +89,19 @@ public static class WorkspaceInputs
         {
             var definition = Definitions.FirstOrDefault(d => Path.GetFileName(d.RelativePath).Equals(name, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidDataException("无法识别文件名：" + name);
-            target = Path.Combine(DateDirectory(workspace, date), "Needed files", definition.RelativePath.Replace('/', Path.DirectorySeparatorChar));
+            target = Path.Combine(directory, "Needed files", definition.RelativePath.Replace('/', Path.DirectorySeparatorChar));
         }
         if (Path.GetFullPath(source).Equals(Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase)) return target;
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         if (File.Exists(target)) File.Copy(target, target + ".before-import-" + DateTime.Now.ToString("yyyyMMddHHmmssfff"));
         File.Copy(source, target, true);
         return target;
+    }
+
+    static string? DateMismatch(string directory, DateTime date)
+    {
+        var folderName = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar));
+        return DateTime.TryParseExact(folderName, "yyyy.MM.dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var folderDate) && folderDate.Date != date.Date
+            ? $"选中目录为 {folderName}，与业务日期 {date:yyyy.MM.dd} 不一致" : null;
     }
 }

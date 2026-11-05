@@ -86,7 +86,12 @@ public sealed class DailyRates
             {
                 var currency = dataRow.Cell(currencyCell.Address.ColumnNumber).GetString().Trim();
                 if (currency.Length == 0) continue;
-                var text = dataRow.Cell(rateCell.Address.ColumnNumber).GetFormattedString();
+                var rateData = dataRow.Cell(rateCell.Address.ColumnNumber);
+                if (rateData.HasFormula && rateData.CachedValue.Type != XLDataType.Number)
+                    throw new InvalidDataException($"汇率：{currency} 的公式缺少有效数值缓存");
+                var text = rateData.HasFormula ? rateData.CachedValue.GetNumber().ToString("R", CultureInfo.InvariantCulture)
+                    : rateData.DataType == XLDataType.Number ? rateData.GetDouble().ToString("R", CultureInfo.InvariantCulture)
+                    : rateData.GetString();
                 var rate = DataValue.Decimal(text, "汇率 " + currency);
                 if (rate <= 0) throw new InvalidDataException($"汇率：{currency} 必须大于零");
                 if (rates.TryGetValue(currency, out var previous) && previous != rate) throw new InvalidDataException($"汇率：{currency} 有冲突记录");

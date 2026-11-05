@@ -1,6 +1,6 @@
 # Cash Rec
 
-Windows 10/11 x64 desktop application for local TMA/TMG reconciliation. Business inputs, mappings, results and backups remain in a user-selected workspace outside the program installation directory. The installer includes the runtime; end users do not install Python, .NET or developer tools.
+Windows x64 desktop application for local TMA/TMG reconciliation. Installation requires Windows 10 build 19041 or later. Business inputs, mappings, results and backups remain in a user-selected workspace outside the program installation directory. The installer includes the runtime; end users do not install Python, .NET or developer tools.
 
 ## Daily use
 
