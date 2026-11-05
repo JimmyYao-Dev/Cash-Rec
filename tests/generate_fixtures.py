@@ -187,10 +187,10 @@ def write_day(root: Path, day: datetime) -> None:
     save_book(needed / "PSP+BANK/BANK BD.xlsx", {"PSP On The Way": pending, "BANK BD": bank_rows})
     save_book(needed / "Rate/VFSC Rate.xlsx", {"Sheet1": [
         ["Date", "Symb", "Currency", "Units per USD", "USD per Unit", "Notes"],
-        [day, "USDUSD", "USD", 1, 1, "synthetic"],
-        [day, "AUDUSD", "AUD", 1.25, 0.8, "synthetic"],
-        [day, "EURUSD", "EUR", 1.25, 0.8, "synthetic"],
-        [day, "USCUSD", "USC", 100, 0.01, "synthetic units"],
+        [day, "USD", "USD US Dollar", 1, 1, "synthetic"],
+        [day, "AUD", "AUD Australian Dollar", 1.25, 0.8, "synthetic"],
+        [day, "EUR", "EUR Euro", 1.25, 0.8, "synthetic"],
+        [day, "USC", "USC US Cents", 100, 0.01, "synthetic units"],
     ]})
 
 
