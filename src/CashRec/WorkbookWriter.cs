@@ -45,7 +45,7 @@ public static class WorkbookWriter
                         case bool boolean: cell.Value = boolean; break;
                         default: cell.Value = value.ToString() ?? ""; break;
                     }
-                    if (columns[c] is "DEP" or "PNL" or "Movement" || columns[c].Contains("USD", StringComparison.OrdinalIgnoreCase))
+                    if (columns[c] is "DEP" or "PNL" or "Movement" or "USD Equivalent" or "Prev USD Equivalent")
                         cell.Style.NumberFormat.Format = "$#,##0.00;[Red]($#,##0.00);$0.00";
                 }
                 rowNumber++;

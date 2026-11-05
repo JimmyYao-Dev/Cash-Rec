@@ -35,7 +35,7 @@ Assert(!Directory.EnumerateFileSystemEntries(selectedDateFolder).Any(), "Wrong-d
 Assert(WorkspaceInputs.Inspect(selectedDateFolder, new DateTime(2026, 10, 26)).Diagnostics.Any(d => d.Source == "日期" && d.Severity == "Error"), "Preflight must retain explicit date mismatch diagnostic");
 
 var table = new ReportTable("Equity");
-table.AddRow(new() { ["Movement"] = 8m, ["DEP"] = 30m, ["PNL"] = new FormulaCell("A2-B2", -22m) });
+table.AddRow(new() { ["Movement"] = 8m, ["DEP"] = 30m, ["PNL"] = new FormulaCell("A2-B2", -22m), ["Units per USD"] = 1.23456789m });
 var outputPath = Path.Combine(directory, "cache.xlsx");
 WorkbookWriter.Write(outputPath, new List<ReportTable> { table });
 using (var archive = ZipFile.OpenRead(outputPath))
@@ -47,7 +47,14 @@ using (var archive = ZipFile.OpenRead(outputPath))
     Assert((string?)cell.Element(ns + "f") == "A2-B2", "PNL formula must remain editable");
     Assert((string?)cell.Element(ns + "v") == "-22", "PNL cache must contain engine-calculated value");
 }
-Console.WriteLine("PASS: FX raw precision; wrong-date import protection; formula numeric cache.");
+using (var output = new XLWorkbook(outputPath))
+{
+    var unit = output.Worksheet("Equity").Cell(2, 4);
+    Assert(!unit.Style.NumberFormat.Format.Contains('$'), "Unit divisor must not use a money format");
+    Assert(DataValue.Decimal(unit.GetDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture), "Units per USD") == 1.23456789m, "Unit divisor must preserve raw numeric precision");
+    Assert(output.Worksheet("Equity").Cell(2, 1).Style.NumberFormat.Format.Contains('$'), "Movement retains USD amount formatting");
+}
+Console.WriteLine("PASS: FX raw precision; wrong-date import protection; formula numeric cache; unit versus money formats.");
 Console.WriteLine("Synthetic evidence: " + directory);
 
 static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
