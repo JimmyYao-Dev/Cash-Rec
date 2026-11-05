@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "synthetic_only": true,
+  "business_date": "2026-10-25",
+  "previous_date": "2026-10-22",
+  "key_normalization": {"Account Number": "Keep text and leading zeroes; remove display spaces and hyphens only."},
+  "column_aliases": {"Retail Type": ["Retail Type", "IB/Standard", "IB Status", "Category"], "Date": ["Date", "Business Date"]},
+  "sheets": {
+    "Equity": {
+      "key": ["Branch", "Retail Type", "Currency"],
+      "rows": [
+        {"Branch": "TMA", "Retail Type": "Standard", "Currency": "USD", "Amount": 88, "USD Equivalent": 88, "Prev USD Equivalent": 80, "Movement": 8, "DEP": 0},
+        {"Branch": "TMA", "Retail Type": "IB", "Currency": "USD", "Amount": 20, "USD Equivalent": 20, "Prev USD Equivalent": 10, "Movement": 10, "DEP": 0},
+        {"Branch": "TMA", "Retail Type": "IB", "Currency": "AUD", "Amount": 125, "USD Equivalent": 100, "Prev USD Equivalent": 80, "Movement": 20, "DEP": 0},
+        {"Branch": "TMG", "Retail Type": "Standard", "Currency": "USC", "Amount": 200, "USD Equivalent": 2, "Prev USD Equivalent": 1, "Movement": 1, "DEP": 0},
+        {"Branch": "TMG", "Retail Type": "Standard", "Currency": "EUR", "Amount": 37.5, "USD Equivalent": 30, "Prev USD Equivalent": 20, "Movement": 10, "DEP": 0}
+      ],
+      "total_usd": 240,
+      "total_previous_usd": 191,
+      "total_movement": 49
+    },
+    "Bank": {
+      "key": ["Branch", "Account Number", "Currency"],
+      "rows": [
+        {"Branch": "TMA", "Account Number": "0011001", "Currency": "USD", "Account Type": "Clients", "Client Type": "Retail", "EOD Balance": 880, "USD Equivalent": 880, "Prev USD Equivalent": 800, "Movement": 80},
+        {"Branch": "TMA", "Account Number": "0011002", "Currency": "AUD", "Account Type": "Settle", "EOD Balance": 125, "USD Equivalent": 100, "Prev USD Equivalent": 80, "Movement": 20},
+        {"Branch": "TMA", "Account Number": "0011003", "Currency": "USD", "Account Type": "Clients", "Client Type": "Wholesale", "EOD Balance": 10, "USD Equivalent": 10, "Prev USD Equivalent": 10, "Movement": 0},
+        {"Branch": "TMG", "Account Number": "0090001", "Currency": "USD", "Account Type": "Clients", "Client Type": "Wholesale", "EOD Balance": 400, "USD Equivalent": 400, "Prev USD Equivalent": 350, "Movement": 50},
+        {"Branch": "TMG", "Account Number": "0090002", "Currency": "EUR", "Account Type": "Clients", "Client Type": "Insto", "EOD Balance": 25, "USD Equivalent": 20, "Prev USD Equivalent": 10, "Movement": 10}
+      ],
+      "total_usd": 1410,
+      "total_previous_usd": 1250,
+      "total_movement": 160
+    },
+    "PSP": {
+      "key": ["Source", "PSP", "Currency"],
+      "rows": [
+        {"Source": "PSPAU", "PSP": "Gateway-A", "Currency": "USD", "Branch": "TMA", "Amount": 88, "USD Equivalent": 88, "Prev USD Equivalent": 80, "Movement": 8},
+        {"Source": "PSPGL", "PSP": "Gateway-B", "Currency": "AUD", "Branch": "TMG", "Amount": 125, "USD Equivalent": 100, "Prev USD Equivalent": 80, "Movement": 20},
+        {"Source": "PSPGL", "PSP": "NewGateway", "Currency": "EUR", "Branch": "TMG", "Amount": 37.5, "USD Equivalent": 30, "Prev USD Equivalent": 20, "Movement": 10},
+        {"Source": "PSPGL", "PSP": "Shared", "Currency": "USD", "Branch": "TMG", "Amount": 20, "USD Equivalent": 20, "Prev USD Equivalent": 10, "Movement": 10},
+        {"Source": "PSPAU", "PSP": "Shared", "Currency": "USD", "Branch": "TMA", "Amount": 15, "USD Equivalent": 15, "Prev USD Equivalent": 10, "Movement": 5}
+      ],
+      "total_usd": 253,
+      "total_previous_usd": 200,
+      "total_movement": 53
+    },
+    "TransactionExchange": {
+      "key": ["Source", "Comment"],
+      "forbidden_columns": ["Previous", "Prev USD Equivalent", "Movement"],
+      "rows": [
+        {"Source": "Transaction reports", "Comment": "NAB synthetic wire", "Branch": "TMA", "Type": "Retail", "Exchange Type": "MT4 BW", "Currency": "USD", "Amount": 100, "USD Equivalent": 100},
+        {"Source": "Transaction reports", "Comment": "Gateway-A withdrawal", "Branch": "TMA", "Type": "PSP", "Transaction Type": "PSP WITH", "Currency": "USD", "Amount": -30, "USD Equivalent": -30},
+        {"Source": "Transaction reports", "Comment": "Gateway-B deposit", "Branch": "TMG", "Type": "PSP", "Transaction Type": "PSP Dep", "Currency": "AUD", "Amount": 125, "USD Equivalent": 100},
+        {"Source": "Transaction reports", "Comment": "Other bank withdrawal", "Branch": "TMG", "Type": "PSP", "Transaction Type": "PSP WITH", "Currency": "EUR", "Amount": -25, "USD Equivalent": -20},
+        {"Source": "Transaction reports", "Comment": "Gateway equal-amount distinct transaction", "Branch": "TMA", "Type": "PSP", "Transaction Type": "PSP Dep", "Currency": "USD", "Amount": 100, "USD Equivalent": 100},
+        {"Source": "BANK BD", "Comment": "Synthetic retail transfer", "Branch": "TMG", "Type": "Retail", "Rational": "Adjustment", "Currency": "USD", "Amount": 25, "USD Equivalent": 25},
+        {"Source": "BANK BD", "Comment": "Synthetic wholesale withdrawal", "Branch": "TMA", "Type": "Wholesale", "Rational": "Withdrawal", "Currency": "EUR", "Amount": -10, "USD Equivalent": -8},
+        {"Source": "BANK BD", "Comment": "Synthetic promotion", "Branch": "TMG", "Type": "Other", "Rational": "promote", "Currency": "AUD", "Amount": 50, "USD Equivalent": 40},
+        {"Source": "BANK BD", "Comment": "PSP CN Commission", "Branch": "TMA", "Type": "PSP", "Transaction Type": "PSP CN Commission", "Currency": "USD", "Amount": -20, "USD Equivalent": -20},
+        {"Source": "BANK BD", "Comment": "PSP Commission", "Branch": "TMG", "Type": "PSP", "Transaction Type": "PSP Commission", "Currency": "USD", "Amount": -5, "USD Equivalent": -5},
+        {"Source": "BANK BD", "Comment": "Synthetic BANK BD PSP deposit", "Branch": "TMG", "Type": "PSP", "Currency": "USD", "Amount": 100, "USD Equivalent": 100}
+      ],
+      "total_usd": 382,
+      "source_totals_usd": {"Transaction reports": 250, "BANK BD": 132}
+    }
+  },
+  "manual_formula_case": {
+    "sheet": "Equity",
+    "key": {"Branch": "TMA", "Retail Type": "Standard", "Currency": "USD"},
+    "edit": {"DEP": 30},
+    "expected_after_excel_recalculation": {"Movement": 8, "PNL": -22},
+    "requires_real_excel_edit": true
+  },
+  "diagnostics": {
+    "regulator_excluded_rows": {"Equity": 2, "Transaction reports": 2},
+    "unmapped_psp": ["PSPGL|NewGateway|EUR"],
+    "bank_mapping_aliases_apply_once": ["NAB AU|0011001"],
+    "known_mapping_branch_conflicts": ["NAB AU|0011001", "PSPAU|Gateway-A|USD"],
+    "bank_bd_out_of_scope_rows": 2
+  }
+}
