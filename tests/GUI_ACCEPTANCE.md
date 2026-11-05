@@ -33,13 +33,17 @@ The numerical reader tolerance of 1e-8 handles Excel binary serialization only. 
 
 ## Measured small-fixture baseline
 
-The GUI harness records executable size/version, OS/architecture, prepared input file count/bytes, launch-to-observed-window elapsed time, run-button invocation-to-observed-completion-diagnostic elapsed time, and the application process peak working-set bytes. Pass `-CaseScale` to identify the case (default `synthetic-small`). UI Automation observation time and polling are included; these values are not engine-only benchmarks. Preflight-only runs leave the run duration unset. No unmeasured latency, memory or throughput threshold is invented. This small-fixture baseline does not replace the later large-input performance ticket.
+The GUI harness records executable size/version, OS/architecture, current-date prepared input file count/bytes, launch-to-observed-window elapsed time, run-button invocation-to-observed-completion-diagnostic elapsed time, and the application process peak working-set bytes. Prior-baseline reconstruction may read additional earlier input files. Pass `-CaseScale` to identify the case (default `synthetic-small`). UI Automation observation time and polling are included; these values are not engine-only benchmarks. Preflight-only runs leave the run duration unset. No unmeasured latency, memory or throughput threshold is invented. This small-fixture baseline does not replace the later large-input performance ticket.
+
+`-IsolateRuntimeEnvironment` launches only the application child with Windows-only PATH, nonexistent DOTNET_ROOT locations, disabled multilevel runtime lookup and no PYTHONHOME/PYTHONPATH. It leaves the host environment unchanged. An installed GUI run and independent workbook checks under this flag verify process-level independence from the host developer tools; this is not a clean-VM test or an untested operating-system compatibility matrix.
 
 ## Actual Excel edit
 
 Run `tests/Invoke-ExcelFormulaAcceptance.ps1 -Workbook <generated-file> -Oracle tests/fixtures/expected.json -EvidenceDirectory <evidence-folder>` in the same interactive desktop. It creates a new, visible Excel process and verifies its PID differs from every pre-existing Excel process before opening or editing the synthetic workbook. Existing user instances are never closed or changed.
 
 The oracle's TMA/Standard/USD row has Movement 8. The script edits DEP to 30 in actual Excel, invokes Excel recalculation and requires PNL -22 while Movement stays 8. It records before/after values, the actual formula, an Excel screenshot and an edited copy. It closes the synthetic workbook without saving over the original generated file, and quits only the newly owned Excel instance. Formula text and cached-value checks do not replace this test.
+
+GUI and Excel screenshots use PrintWindow on the owned window handle. A desktop capture is not substituted when the user has another window in front.
 
 ## Evidence boundary
 

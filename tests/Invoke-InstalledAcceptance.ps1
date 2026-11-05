@@ -8,6 +8,7 @@ param(
  [int]$TimeoutSeconds=120,
  [string]$CaseScale='synthetic-small',
  [switch]$PreflightOnly,
+ [switch]$IsolateRuntimeEnvironment,
  [string]$ImportFile,
  [switch]$KeepOpen
 )
@@ -22,6 +23,7 @@ using System;
 using System.Runtime.InteropServices;
 public static class CashRecUiaNative {
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+ [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd,IntPtr hdc,uint flags);
  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
  public static int ForegroundProcess() {uint pid;GetWindowThreadProcessId(GetForegroundWindow(),out pid);return (int)pid;}
@@ -60,7 +62,9 @@ function Capture-Window($Window,$Path) {
  $image=[Drawing.Bitmap]::new([int]$rect.Width,[int]$rect.Height)
  $graphics=[Drawing.Graphics]::FromImage($image)
  try {
-  $graphics.CopyFromScreen([int]$rect.X,[int]$rect.Y,0,0,$image.Size)
+  $dc=$graphics.GetHdc()
+  try{$captured=[CashRecUiaNative]::PrintWindow([IntPtr]$Window.Current.NativeWindowHandle,$dc,2)}finally{$graphics.ReleaseHdc($dc)}
+  if(-not $captured){throw 'Could not capture the owned test window; no desktop screenshot will be substituted.'}
   $stream=[IO.MemoryStream]::new()
   try {$image.Save($stream,[Drawing.Imaging.ImageFormat]::Png);[IO.File]::WriteAllBytes($Path,$stream.ToArray())}finally{$stream.Dispose()}
  } finally {$graphics.Dispose();$image.Dispose()}
@@ -86,7 +90,23 @@ $result=[ordered]@{Entry='Installed real GUI via UI Automation';Executable=$Inst
 $result.Measurements=[ordered]@{CaseScale=$CaseScale;OS=[Environment]::OSVersion.VersionString;Architecture=$env:PROCESSOR_ARCHITECTURE;AppFileVersion=[Diagnostics.FileVersionInfo]::GetVersionInfo($InstalledExe).FileVersion;InstalledExecutableBytes=(Get-Item -LiteralPath $InstalledExe).Length;LaunchToWindowMilliseconds=$null;RunToDiagnosticMilliseconds=$null;PeakWorkingSetBytes=$null;PreparedInputFiles=$null;PreparedInputBytes=$null}
 try {
  $launchWatch=[Diagnostics.Stopwatch]::StartNew()
- $process=Start-Process -FilePath $InstalledExe -PassThru
+ if($IsolateRuntimeEnvironment){
+  $child=[Diagnostics.ProcessStartInfo]::new()
+  $child.FileName=$InstalledExe
+  $child.WorkingDirectory=Split-Path -Parent $InstalledExe
+  $child.UseShellExecute=$false
+  $child.EnvironmentVariables['PATH']=(Join-Path $env:WINDIR 'System32')+';'+$env:WINDIR
+  $absentRuntime=Join-Path ([IO.Path]::GetTempPath()) ('CashRec-absent-runtime-'+[guid]::NewGuid().ToString('N'))
+  foreach($key in @('DOTNET_ROOT','DOTNET_ROOT_X64','DOTNET_ROOT_X86','DOTNET_ROOT(x86)')){$child.EnvironmentVariables[$key]=$absentRuntime}
+  $child.EnvironmentVariables['DOTNET_MULTILEVEL_LOOKUP']='0'
+  $child.EnvironmentVariables.Remove('PYTHONHOME')
+  $child.EnvironmentVariables.Remove('PYTHONPATH')
+  $result.RuntimeIsolation=@{Enabled=$true;Scope='Child process environment only';Path=$child.EnvironmentVariables['PATH'];DotnetRoot=$absentRuntime;MultilevelLookup='0';PythonVariablesRemoved=$true;CleanVirtualMachine=$false}
+  $process=[Diagnostics.Process]::Start($child)
+ }else{
+  $result.RuntimeIsolation=@{Enabled=$false}
+  $process=Start-Process -FilePath $InstalledExe -PassThru
+ }
  $deadline=[DateTime]::UtcNow.AddSeconds(30)
  $condition=[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ProcessIdProperty,[int]$process.Id)
  do {
