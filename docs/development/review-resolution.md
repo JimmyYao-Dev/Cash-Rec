@@ -1,11 +1,11 @@
 # First-batch review resolution
 
-The originating Standards and Spec reviews compared baseline `5dff3dd` with candidate `60c489d`. This record keeps their findings separate. It records implementation and developer verification; installed GUI negative regressions must run on the rebuilt candidate before release.
+The originating Standards and Spec reviews compared baseline `5dff3dd` with candidate `60c489d`. This record keeps their findings separate. All findings were fixed and independently rechecked; final installed GUI results are recorded in `acceptance-results.md`.
 
 ## Standards
 
 1. Packaging uses a new unique staging directory for each real publish. An explicit allowlist rejects source, debug, data and media files. `publish-manifest.json` records lengths and SHA256 hashes. A repeated-publish regression retained a stale source sentinel in the old publish folder, rejected source injected into the first stage, used a different second stage and verified independent hashes. No computed directory is recursively deleted. The installer location is unchanged.
-2. The existing folder chooser now follows the same busy state as the workspace text and date control. The interface layout and workflow remain unchanged. Installed GUI state verification belongs to final candidate acceptance.
+2. The existing folder chooser now follows the same busy state as the workspace text and date control. The interface layout and workflow remain unchanged. The final installed GUI run observed the folder chooser disabled while processing.
 3. Fatal Equity row validation now stops at the first error because that error already prevents output. A regression places a malformed later CSV record after an invalid first-row IB flag and confirms the first-row error stops the scan.
 4. The duplicated raw/cached-number implementations are consolidated into `ExcelNumbers.Read`, used by daily rates, PSP and BANK BD. Raw precision is retained; a consumed formula must have a numeric cache. Source display formatting is never used as a financial value.
 
@@ -33,3 +33,7 @@ Company can be prefilled in an otherwise unused template row. Such a row is skip
 BankBdRegression covers the occupancy boundary and strict cached-value errors. Four separate synthetic GUI scenarios cover cached-zero template rows, meaningful zero retention, missing Currency and uncached Amount. The template scenario uses 232 synthetic rows and leaves the independent default oracle unchanged. Final installed-GUI execution belongs to candidate acceptance; developer checks do not establish GUI completion.
 
 Developer checks passed: BankBdRegression including all four generated fixtures, ReviewRegression, and PreviousRegression rerun/cache/manual-value checks against both successful fixtures. Independent Python reading matched all four full workbook oracles: 11 transaction rows for template-only additions, 12 with the genuine zero transaction, USD total 382 in both cases. Those workbooks were produced through the developer runner; the verifier's static entry label does not constitute installed-GUI evidence.
+
+## Final verification
+
+At `ce325b5`, the rebuilt installed application also passed all four BANK BD scenarios through actual GUI controls. The normal, confirmed-policy and isolated-runtime scenarios passed full independent four-sheet checks. Actual Excel editing again preserved Movement 8 while DEP 0→30 changed PNL 8→−22. Both independent focused source reviews returned zero unresolved findings; the Standards review reported zero documented violations and zero actionable heuristics.
