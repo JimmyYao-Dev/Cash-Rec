@@ -12,7 +12,9 @@ public static class DataValue
     {
         foreach (var name in names)
         {
-            var key = row.Keys.FirstOrDefault(k => Normalize(k) == Normalize(name));
+            if (row.TryGetValue(name, out var exact)) return exact.Trim();
+            var normalizedName = Normalize(name);
+            var key = row.Keys.FirstOrDefault(k => Normalize(k) == normalizedName);
             if (key != null) return row[key].Trim();
         }
         return "";
