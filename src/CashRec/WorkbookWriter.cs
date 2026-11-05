@@ -13,6 +13,8 @@ public static class WorkbookWriter
         using var workbook = new XLWorkbook();
         workbook.CustomProperties.Add("CashRecRules", "PRD1.6-ASIC-VFSC");
         workbook.CustomProperties.Add("CashRecVersion", "0.1.0");
+        if (tables.Any(table => table.Name == "Equity" && table.Columns.Contains("Previous Date")))
+            workbook.CustomProperties.Add("CashRecManualDEP", "1");
         var cachedValues = new Dictionary<string, Dictionary<string, decimal>>();
         foreach (var name in SheetNames)
         {
@@ -42,7 +44,7 @@ public static class WorkbookWriter
                         case bool boolean: cell.Value = boolean; break;
                         default: cell.Value = value.ToString() ?? ""; break;
                     }
-                    if (columns[c] is "DEP" or "PNL" || columns[c].Contains("USD", StringComparison.OrdinalIgnoreCase))
+                    if (columns[c] is "DEP" or "PNL" or "Movement" || columns[c].Contains("USD", StringComparison.OrdinalIgnoreCase))
                         cell.Style.NumberFormat.Format = "$#,##0.00;[Red]($#,##0.00);$0.00";
                 }
                 rowNumber++;
