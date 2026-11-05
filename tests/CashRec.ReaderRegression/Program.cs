@@ -76,6 +76,19 @@ using (var archive = ZipFile.Open(missing, ZipArchiveMode.Update)) Rewrite(archi
     xml.Descendants(ns + "c").Single(e => (string?)e.Attribute("r") == "E2").Element(ns + "v")!.Remove();
 });
 Reject(() => BalanceWorkbookReader.ReadRows(missing, "Bank"), "Missing formula cache must not become zero");
+var manualProjection = BalanceWorkbookReader.ReadRows(missing, "Bank", new[] { "Date", "Branch", "Account Number", "DEP" });
+Assert(manualProjection.Count == 2 && manualProjection[0].Count == 4, "Projection must return only consumed fields and preserve records");
+Assert(manualProjection[0]["DEP"]!.Equals(30m), "Numeric DEP must remain readable when unused automatic PNL cache is stale");
+Assert(!manualProjection[0].ContainsKey("PNL"), "Unused formula must not be returned or validated");
+Reject(() => BalanceWorkbookReader.ReadRows(missing, "Bank", new[] { "PNL" }), "Consumed PNL still requires a valid numeric cache");
+Reject(() => BalanceWorkbookReader.ReadRows(missing, "Bank", new[] { "Missing Header" }), "Required projection header must be validated");
+
+var headerOnly = Path.Combine(directory, "header-only.xlsx");
+var emptyBank = new ReportTable("Bank");
+emptyBank.Columns.AddRange(["Date", "Branch", "DEP"]);
+WorkbookWriter.Write(headerOnly, new List<ReportTable> { emptyBank });
+Assert(BalanceWorkbookReader.ReadRows(headerOnly, "Bank", new[] { "Date", "DEP" }).Count == 0, "Header-only valid schema can represent no records");
+Reject(() => BalanceWorkbookReader.ReadRows(headerOnly, "Bank", new[] { "USD Equivalent" }), "Header-only sheet must still satisfy required projection schema");
 
 var duplicate = Copy("duplicate-header.xlsx");
 using (var archive = ZipFile.Open(duplicate, ZipArchiveMode.Update)) Rewrite(archive, "xl/worksheets/sheet2.xml", xml =>
