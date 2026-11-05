@@ -13,6 +13,7 @@ $publishDir = Join-Path $OutputRoot 'publish'
 if ($LASTEXITCODE -ne 0) { throw 'Application publish failed' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $publishDir 'README.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD-PARTY-NOTICES.md') -Destination (Join-Path $publishDir 'THIRD-PARTY-NOTICES.md')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'third-party') -Destination $publishDir -Recurse -Force
 $sdkDirectory = Split-Path -Parent ([IO.Path]::GetFullPath($Dotnet))
 foreach ($noticeName in @('LICENSE.txt', 'ThirdPartyNotices.txt')) {
     $noticePath = Join-Path $sdkDirectory $noticeName
