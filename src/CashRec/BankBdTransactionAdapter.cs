@@ -42,17 +42,27 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
             var excluded = new Dictionary<string, int>(StringComparer.Ordinal);
             var otherTypes = new Dictionary<string, int>(StringComparer.Ordinal);
             var rowCount = 0;
+            var templateCount = 0;
             foreach (var row in input.Sheet.RowsUsed().Where(r => r.RowNumber() > input.HeaderRow))
             {
-                if (RequiredHeaders.All(name => row.Cell(input.Headers[DataValue.Normalize(name)]).IsEmpty()))
-                    continue;
-                rowCount++;
-                if (rowCount % 10000 == 0)
-                    context.Progress?.Invoke($"处理 BANK BD：{rowCount:N0} 条源记录");
                 var source = $"{Path.GetFileName(path)} / {input.Sheet.Name} 第 {row.RowNumber()} 行";
                 try
                 {
                     string Text(string header) => ReadText(row.Cell(input.Headers[DataValue.Normalize(header)]), source);
+                    var comment = Text("Comment");
+                    var rational = Text("Rational");
+                    var currency = Text("Currency").Trim().ToUpperInvariant();
+                    if (string.IsNullOrWhiteSpace(comment) && string.IsNullOrWhiteSpace(rational) && currency.Length == 0
+                        && IsBlankOrZero(row.Cell(input.Headers["amount"]), source + " Amount")
+                        && new[] { "credit", "debit" }.All(name => !input.Headers.TryGetValue(name, out var column)
+                            || IsBlankOrZero(row.Cell(column), source + " " + name)))
+                    {
+                        templateCount++;
+                        continue;
+                    }
+                    rowCount++;
+                    if (rowCount % 10000 == 0)
+                        context.Progress?.Invoke($"处理 BANK BD：{rowCount:N0} 条源记录");
                     var company = Text("Company");
                     var match = Regex.Match(company.Trim(), @"^(TMA|TMG)(?:\s*-\s*(.*))?$",
                         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -68,9 +78,6 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
                     if (!BusinessTypes.ContainsKey(originalType))
                         otherTypes[originalType.Length == 0 ? "(空)" : originalType] =
                             otherTypes.GetValueOrDefault(originalType.Length == 0 ? "(空)" : originalType) + 1;
-                    var comment = Text("Comment");
-                    var rational = Text("Rational");
-                    var currency = Text("Currency").Trim().ToUpperInvariant();
                     if (currency.Length == 0) throw new InvalidDataException($"{source}：Currency 为空");
                     var amount = ExcelNumbers.Read(row.Cell(input.Headers["amount"]), source + " Amount");
                     var rate = context.Rates.Get(currency);
@@ -109,6 +116,8 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
                 table.Diagnostics.Add(new("Warning", "BANK BD", $"排除 {count} 条记录：{reason}"));
             foreach (var (original, count) in otherTypes)
                 table.Diagnostics.Add(new("Warning", "BANK BD", $"{count} 条记录的业务类别 {original} 归入 Other，原值保留"));
+            if (templateCount > 0)
+                table.Diagnostics.Add(new("Info", "BANK BD", $"跳过 {templateCount} 条无业务内容的空模板行"));
             table.Diagnostics.Add(new("Info", "BANK BD",
                 $"读取 {rowCount} 条准备记录，保留 {table.Rows.Count} 条 TMA/TMG 交易；使用源 Amount 符号"));
             return table;
@@ -120,6 +129,9 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
     }
 
     static string CollapseSpaces(string value) => Regex.Replace(value.Trim(), @"\s+", " ");
+
+    static bool IsBlankOrZero(IXLCell cell, string source) =>
+        (!cell.HasFormula && cell.Value.Type == XLDataType.Blank) || ExcelNumbers.Read(cell, source) == 0m;
 
     static string ClassifyTransaction(string rational, string comment, string type)
     {

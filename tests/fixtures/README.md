@@ -83,6 +83,10 @@ Use `--scenario NAME` with a fresh `--output` path:
 | unknown-bank | Add a synthetic unmapped bank account | Report required mapping; never guess classification |
 | no-previous | Only 2026-10-25 inputs exist | Report unavailable valid previous basis; do not invent zero |
 | corrupt-bank-bd | BANK BD file is deliberately invalid | Error identifies BANK BD and processing stage |
+| template-bankbd | 232 prefilled TMA/TMG rows have blank economic fields and numeric cached-zero Amount formulas | Skip count is aggregated; all four default output oracles remain unchanged |
+| bankbd-real-zero | Add a zero-amount transaction with Comment, Rational and USD Currency | Keep the extra transaction; total USD remains 382 |
+| bankbd-missing-currency | Add a meaningful in-scope transaction without Currency | Explicit Currency error; never assume USD |
+| bankbd-uncached-amount | A prefilled Company row has no economic text and an Amount formula without a numeric cache | Explicit cache error; never treat the row as an empty template |
 
 The default good-result oracle remains available in failure workspaces for
 reference; it is not a demand that a failed run produce a complete workbook.

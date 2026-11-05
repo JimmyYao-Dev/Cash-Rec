@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
+import posixpath
 from datetime import datetime, timedelta
 from pathlib import Path
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 from openpyxl import Workbook, load_workbook
 
@@ -24,6 +28,7 @@ SCENARIOS = (
     "no-previous", "corrupt-bank-bd",
     "equity-bad-header", "mt4-bad-header", "bank-bad-header", "bank-empty-classification",
     "confirmed-policies",
+    "template-bankbd", "bankbd-real-zero", "bankbd-missing-currency", "bankbd-uncached-amount",
 )
 EQUITY_HEADERS = [
     "dt_report", "report_jurisdiction", "login", "is_ib", "group", "user_id",
@@ -65,6 +70,33 @@ def save_book(path: Path, sheets: dict[str, list[list[object]]]) -> None:
             sheet.append(row)
         sheet.freeze_panes = "A2"
     book.save(path)
+
+
+def cache_formula_numbers(path: Path, sheet_name: str, values: dict[str, int]) -> None:
+    """Write independently specified numeric caches; openpyxl never calculates formulas."""
+    ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    relationship = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+    original = path.read_bytes()
+    with ZipFile(io.BytesIO(original)) as archive:
+        workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+        sheet = next(s for s in workbook.findall("s:sheets/s:sheet", ns) if s.attrib["name"] == sheet_name)
+        relationships = ElementTree.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+        target = next(r.attrib["Target"] for r in relationships if r.attrib["Id"] == sheet.attrib[relationship])
+        part = target.lstrip("/") if target.startswith("/") else posixpath.normpath("xl/" + target)
+        document = ElementTree.fromstring(archive.read(part))
+        for cell in document.findall(".//s:sheetData/s:row/s:c", ns):
+            if cell.attrib["r"] not in values:
+                continue
+            assert cell.find("s:f", ns) is not None, "Cache target must be a formula cell"
+            cached = cell.find("s:v", ns)
+            if cached is None:
+                cached = ElementTree.SubElement(cell, "{" + ns["s"] + "}v")
+            cached.text = str(values[cell.attrib["r"]])
+            cell.attrib.pop("t", None)
+        modified = ElementTree.tostring(document, encoding="utf-8", xml_declaration=True)
+        with ZipFile(path, "w") as output:
+            for entry in archive.infolist():
+                output.writestr(entry, modified if entry.filename == part else archive.read(entry))
 
 
 def equity_rows(day: datetime) -> list[list[object]]:
@@ -236,6 +268,28 @@ def apply_scenario(root: Path, scenario: str) -> None:
             for column in (4, 6, 8):
                 book["BANK MAPPING"].cell(row, column).value = None
         book.save(path)
+    elif scenario in {"template-bankbd", "bankbd-real-zero", "bankbd-missing-currency", "bankbd-uncached-amount"}:
+        path = needed / "PSP+BANK/BANK BD.xlsx"
+        book = load_workbook(path)
+        sheet = book["BANK BD"]
+        caches = {}
+        if scenario == "template-bankbd":
+            # Match a prefilled template: Company and cached zero formulas do not constitute a transaction.
+            for number in range(232):
+                row = sheet.max_row + 1
+                sheet.append([0 if number % 2 else None, 0 if number % 3 else None,
+                              None, None, None, "TMA" if number % 2 else "TMG", f"=SUM(A{row}:B{row})"])
+                caches[f"G{row}"] = 0
+        elif scenario == "bankbd-real-zero":
+            sheet.append([0, None, "Synthetic real zero", "Adjustment", "USD", "TMA-Retail", 0])
+        elif scenario == "bankbd-missing-currency":
+            sheet.append([1, None, "Synthetic missing currency", "Adjustment", None, "TMA-Retail", 1])
+        else:
+            # Missing numeric cache must never be mistaken for a cached zero template formula.
+            sheet.append([None, None, None, None, None, "TMG", "=0"])
+        book.save(path)
+        if caches:
+            cache_formula_numbers(path, "BANK BD", caches)
     elif scenario == "confirmed-policies":
         for day in (PREVIOUS, CURRENT):
             day_needed = root / day.strftime("%Y.%m.%d") / "Needed files"
@@ -292,6 +346,13 @@ def main() -> None:
         row = next(row for row in psp["rows"] if row["Source"] == "PSPAU" and row["PSP"] == "Gateway-A")
         row.update({"Amount": 0, "USD Equivalent": 0, "Movement": -80})
         psp.update({"total_usd": 165, "total_previous_usd": 200, "total_movement": -35})
+    elif args.scenario == "bankbd-real-zero":
+        expected["sheets"]["TransactionExchange"]["rows"].append({
+            "Source": "BANK BD", "Comment": "Synthetic real zero", "Branch": "TMA", "Type": "Retail",
+            "Rational": "Adjustment", "Currency": "USD", "Amount": 0, "USD Equivalent": 0,
+        })
+    elif args.scenario == "template-bankbd":
+        expected["diagnostics"]["bank_bd_template_rows_skipped"] = 232
     (root / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (root / MARKER).write_text(json.dumps({"synthetic": True, "scenario": args.scenario, "days": [d.strftime("%Y.%m.%d") for d in days]}, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"fixture": str(root), "scenario": args.scenario, "days": len(days), "synthetic_only": True}))
