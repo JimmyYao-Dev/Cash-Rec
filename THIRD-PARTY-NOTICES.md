@@ -1,6 +1,6 @@
 # Third-party notices
 
-Cash Rec uses the following third-party software. The respective authors retain their copyrights. The runtime's license and notices are included as separate `dotnet-*` documents.
+Cash Rec uses the following third-party software. The respective authors retain their copyrights. Full library licenses are included in `third-party`; the runtime's license and notices are included as separate `dotnet-*` documents.
 
 | Software | Version | License and source |
 | --- | --- | --- |
