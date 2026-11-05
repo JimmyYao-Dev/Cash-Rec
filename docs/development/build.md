@@ -7,3 +7,7 @@ The installer must include compiled runtime resources and no business source fil
 Only synthetic fixtures belong in this public repository. Real mappings, accounts, balances, transactions and recordings stay local. Application source, development tools, evidence and production data are separate assets.
 
 Business acceptance runs through the installed graphical application. Internal tests assist development and do not replace installed GUI acceptance or actual Excel editing checks. Formula cells carry engine-calculated numeric values in the output package; Excel recalculates upon opening and editing.
+
+The product installation guard is Windows 10 build 19041 or later, x64. The initial development/acceptance target is Windows 11 Enterprise build 26100; record actual tested builds with each release. This guard is a product compatibility floor, not a claim that every Windows 10 edition remains supported by Microsoft. Runtime support follows the [official .NET 10 OS matrix](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.json).
+
+Run `dotnet run --project tests/CashRec.Regression` for developer regressions covering raw FX precision, date-safe imports and engine-supplied formula caches.
