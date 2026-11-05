@@ -24,10 +24,4 @@ The folder date identifies the report. Prepared CSV files retain all source date
 
 The base workbook has Equity, Bank, PSP and TransactionExchange sheets. Partial results and missing prerequisites are explicitly identified. Excel is used for subsequent manual edits and formula interaction; an output workbook is not proof that manual reconciliation is complete.
 
-## Build
-
-The development build uses .NET 10 SDK and ClosedXML 0.105.0. Run `build/build.ps1` with `-Dotnet` and `-Iscc` pointing to .NET and the Inno Setup compiler. The resulting self-contained Windows x64 program contains no business source files. The installer and published executable are generated under `artifacts`, which is excluded from Git.
-
-Only synthetic test fixtures belong in this public repository. Real mappings, accounts, balances, transaction files and recording evidence stay local. Upgrading or uninstalling the program must preserve the independent business workspace.
-
-Business acceptance must run through the installed graphical application. Internal tests assist development and do not replace installed GUI acceptance or actual Excel editing checks.
+Upgrading or uninstalling the program preserves the independent business workspace. Back up important results before changing files.

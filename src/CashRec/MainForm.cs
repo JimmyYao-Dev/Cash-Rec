@@ -63,7 +63,13 @@ public sealed class MainForm : Form
         checkButton.Click += (_, _) => CheckInputs();
         importButton.Click += (_, _) => ImportFiles();
         runButton.Click += async (_, _) => await Generate();
-        openButton.Click += (_, _) => { if (resultLocation != null) Process.Start(new ProcessStartInfo("explorer.exe", resultLocation) { UseShellExecute = true }); };
+        openButton.Click += (_, _) =>
+        {
+            if (resultLocation == null) return;
+            var launch = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+            launch.ArgumentList.Add(resultLocation);
+            Process.Start(launch);
+        };
     }
 
     bool ValidWorkspace()
