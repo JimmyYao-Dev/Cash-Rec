@@ -1,0 +1,38 @@
+/.idea/
+/data/
+/requirements/
+/reports/
+*.log
+
+# Local environments and caches
+/.transcription-env/
+/.venv/
+/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Business data, generated outputs, and backups
+/db/
+/outputs/
+/backups/
+
+# Large local models, recordings, and application binaries
+/transcription_models/
+*.wav
+*.exe
+*.flag
+
+# Application builds and isolated implementation worktrees
+/.worktrees/
+/.tooling/
+/.scratch/
+/artifacts/
+/.installed-test/
+**/bin/
+**/obj/
