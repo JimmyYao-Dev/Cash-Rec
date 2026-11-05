@@ -38,7 +38,8 @@ public static class ReportRunner
                 .Where(type => !type.IsAbstract && typeof(IReportFinalizer).IsAssignableFrom(type))
                 .Select(type => (IReportFinalizer)Activator.CreateInstance(type)!).ToList();
             foreach (var finalizer in finalizers) finalizer.FinalizeReport(context, tables, diagnostics);
-            var ready = WorkbookWriter.SheetNames.All(name => tables.Any(t => t.Name == name)) && finalizers.Count > 0;
+            var ready = WorkbookWriter.SheetNames.All(name => tables.Any(t => t.Name == name)) && finalizers.Count > 0
+                && !diagnostics.Any(d => d.Severity == "Incomplete");
             if (!ready) diagnostics.Add(new("Warning", "基础报表", "本次基础报表尚不完整；请查看已生成的表与诊断记录"));
             if (diagnostics.Any(d => d.Severity == "Error")) return Finish(null, diagnosticPath, false, diagnostics);
             if (tables.Count == 0) return Finish(null, diagnosticPath, false, diagnostics);
