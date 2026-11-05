@@ -23,6 +23,8 @@ The selected date is entered through the real date picker and read back through 
 
 Each run saves window-only screenshots and `ui-result.json`. The diagnostic JSON is the same local result written by the application for the operator, not a private testing interface. A successful GUI run does not on its own prove the workbook's numbers.
 
+During generation the harness observes `browseButton` alongside disabled `runButton`. It records a confirmed disabled pair when seen, and rechecks Run before reporting a mismatch because processing can complete between sequential UI Automation reads. A run that finishes before any busy-state observation is recorded as unobserved rather than failed.
+
 ## Independent output checks
 
 Run `python tests/verify_outputs.py --workbook <generated-CashRec_Base.xlsx> --expected tests/fixtures/expected.json --report <evidence.json>` after the GUI run. The reader uses openpyxl independently of the application and compares every synthetic business key and expected amount, not only totals.

@@ -72,6 +72,17 @@ function Capture-Window($Window,$Path) {
 function Wait-Diagnostic($Since,$Window,$Button) {
  $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
  while([DateTime]::UtcNow -lt $deadline){
+  if($Button.Current.AutomationId -eq 'runButton' -and -not $Button.Current.IsEnabled){
+   $browse=Find-Control $Window 'browseButton'
+   $browseEnabled=$browse.Current.IsEnabled
+   # UIA reads occur sequentially: completion may happen between the two controls.
+   if(-not $browseEnabled){
+    $result.BusyControls.ObservedDuringRun=$true
+    $result.BusyControls.BrowseDisabled=$true
+   }elseif(-not $Button.Current.IsEnabled){
+    throw 'Workspace browse remained enabled during the actual installed GUI run.'
+   }
+  }
   $file=Get-ChildItem -LiteralPath (Join-Path $Workspace '.cashrec/diagnostics') -Filter ($BusinessDate.ToString('yyyy.MM.dd')+'-*.json') -ErrorAction SilentlyContinue |
    Where-Object {$_.LastWriteTimeUtc -ge $Since.AddSeconds(-1)} | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
   if($null -ne $file -and $Button.Current.IsEnabled){
@@ -176,6 +187,7 @@ try {
   $run=Find-Control $window 'runButton'
   $start=[DateTime]::UtcNow
   $runWatch=[Diagnostics.Stopwatch]::StartNew()
+  $result.BusyControls=[ordered]@{ObservedDuringRun=$false;BrowseDisabled=$null;UnobservedMeaning='Processing may finish before UI Automation observes the busy state.'}
   Invoke-Control $run
   $runDiagnostic=$null
   $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
