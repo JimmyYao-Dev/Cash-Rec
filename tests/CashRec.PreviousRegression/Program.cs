@@ -14,6 +14,7 @@ using (var workbook = new XLWorkbook(result.OutputPath!))
     var headers = sheet.Row(1).CellsUsed().ToDictionary(c => c.GetString(), c => c.Address.ColumnNumber);
     var row = sheet.RowsUsed().Skip(1).Single(r => r.Cell(headers["Branch"]).GetString() == "TMA" && r.Cell(headers["Retail Type"]).GetString() == "Standard" && r.Cell(headers["Currency"]).GetString() == "USD");
     row.Cell(headers["DEP"]).Value = 30;
+    workbook.CustomProperties.Single(p => p.Name == "CashRecValuation").Value = "legacy-market-rate";
     workbook.Save();
 }
 result = ReportRunner.Run(workspace, date);
@@ -24,10 +25,34 @@ Assert(Directory.GetFiles(Path.Combine(workspace, "2026.10.25", "backups"), "*.x
 
 var prior = ReportRunner.Run(workspace, new DateTime(2026, 10, 22));
 Assert(!prior.IsComplete && prior.OutputPath != null, "First snapshot has no fabricated earlier basis");
+using (var workbook = new XLWorkbook(prior.OutputPath!))
+{
+    workbook.CustomProperties.Single(p => p.Name == "CashRecValuation").Value = "legacy-market-rate";
+    var sheet = workbook.Worksheet("Equity");
+    var usdColumn = sheet.Row(1).CellsUsed().Single(c => c.GetString() == "USD Equivalent").Address.ColumnNumber;
+    foreach (var row in sheet.RowsUsed().Skip(1)) row.Cell(usdColumn).Value = 9999;
+    workbook.Save();
+}
+result = ReportRunner.Run(workspace, date);
+Assert(result.IsComplete, "Old valuation with raw input can be reconstructed");
+CheckTotals(result.OutputPath!);
+prior = ReportRunner.Run(workspace, new DateTime(2026, 10, 22));
 var priorInput = Path.Combine(workspace, "2026.10.22", "Needed files", "MT4", "Risk", "Accounting Equity Report.csv");
 var held = priorInput + ".test-held";
 File.Move(priorInput, held);
-try { result = ReportRunner.Run(workspace, date); Assert(result.IsComplete, "Same-rules saved snapshot accepted without original CSV"); CheckTotals(result.OutputPath!); }
+try
+{
+    result = ReportRunner.Run(workspace, date);
+    Assert(result.IsComplete, "Same-rules saved snapshot accepted without original CSV");
+    CheckTotals(result.OutputPath!);
+    using (var workbook = new XLWorkbook(prior.OutputPath!))
+    {
+        workbook.CustomProperties.Single(p => p.Name == "CashRecValuation").Value = "legacy-market-rate";
+        workbook.Save();
+    }
+    result = ReportRunner.Run(workspace, date);
+    Assert(!result.IsComplete && result.Diagnostics.Any(d => d.Severity == "Incomplete"), "Old valuation without raw input cannot become a trusted prior balance");
+}
 finally { File.Move(held, priorInput); }
 var absent = ReportRunner.Run(Path.GetFullPath(args[1]), date);
 Assert(!absent.IsComplete && absent.OutputPath != null && absent.Diagnostics.Any(d => d.Severity == "Incomplete"), "Missing prior explicitly incomplete");

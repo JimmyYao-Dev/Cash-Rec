@@ -19,7 +19,7 @@ public static class ReportRunner
         {
             progress?.Invoke("读取每日汇率");
             var context = new RunContext(date, check.DateDirectory, check.Inputs, check.MappingPath,
-                DailyRates.Load(check.Inputs["Rates"]), progress);
+                DailyRates.Load(check.Inputs["Rates"], date), progress);
             var tables = new List<ReportTable>();
             var adapters = Adapters().ToList();
             foreach (var adapter in adapters)

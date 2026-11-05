@@ -94,7 +94,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                         }
                         return new(date, path, values);
                     }
-                    diagnostics.Add(new("Warning", "上期余额", $"{date:yyyy.MM.dd}已有结果不具备当前规则标记，将尝试按当前规则重算原始余额"));
+                    diagnostics.Add(new("Warning", "上期余额", $"{date:yyyy.MM.dd}已有结果不具备当前实体/估值口径标记，将尝试按当前规则重算原始余额"));
                 }
                 catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException)
                 { diagnostics.Add(new("Warning", "上期余额", $"无法使用{date:yyyy.MM.dd}已存余额：{error.Message}；尝试原始输入")); }
@@ -106,7 +106,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                 if (required.Any(key => !File.Exists(prepared.Inputs[key])))
                     throw new InvalidDataException("缺少重算所需的权益/银行/PSP/汇率输入");
                 var priorContext = new RunContext(date, candidate.Path, prepared.Inputs, context.MappingPath,
-                    DailyRates.Load(prepared.Inputs["Rates"]), context.Progress);
+                    DailyRates.Load(prepared.Inputs["Rates"], date), context.Progress);
                 var values = new Dictionary<string, Dictionary<string, decimal>>();
                 foreach (var adapter in ReportRunner.Adapters().Where(adapter => BalanceSheets.Contains(adapter.Name)))
                 {
@@ -142,7 +142,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
     {
         var path = Path.Combine(context.DateDirectory, "CashRec_Base.xlsx");
         var result = new Dictionary<string, decimal?>(StringComparer.Ordinal);
-        if (!File.Exists(path) || !BalanceWorkbookReader.HasCurrentRules(path) || !BalanceWorkbookReader.HasInitializedDep(path)) return result;
+        if (!File.Exists(path) || !BalanceWorkbookReader.HasCompatibleManualKeys(path) || !BalanceWorkbookReader.HasInitializedDep(path)) return result;
         foreach (var row in BalanceWorkbookReader.ReadRows(path, "Equity", ["Date", "Branch", "Retail Type", "Currency", "DEP"]))
         {
             if (row.GetValueOrDefault("Date") is not DateTime date || date.Date != context.BusinessDate)

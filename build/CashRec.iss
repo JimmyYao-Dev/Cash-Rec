@@ -1,5 +1,5 @@
 #ifndef PublishDir
-  #define PublishDir "..\artifacts\publish"
+  #error "PublishDir must be supplied by build/build.ps1."
 #endif
 #ifndef OutputDir
   #define OutputDir "..\artifacts\installer"

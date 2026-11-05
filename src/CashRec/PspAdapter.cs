@@ -52,7 +52,7 @@ public sealed class PspAdapter : IReportAdapter
             var currency = row.Cell(layout.Currency).GetString().Trim().ToUpperInvariant();
             if (way.Length == 0 || currency.Length == 0)
                 throw new InvalidDataException($"PSP {layout.Sheet.Name}!{row.RowNumber()}：WAY/CURR不能为空");
-            var amount = ReadAmount(row.Cell(layout.Amount), $"PSP {layout.Sheet.Name} 第{row.RowNumber()}行 Amount");
+            var amount = ExcelNumbers.Read(row.Cell(layout.Amount), $"PSP {layout.Sheet.Name} 第{row.RowNumber()}行 Amount", allowBlankZero: true);
             var rate = context.Rates.Get(currency);
             mappings.TryGetValue(Key(source, way, currency), out var matches);
             var company = matches?.Select(m => m.Company).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? [];
@@ -120,12 +120,5 @@ public sealed class PspAdapter : IReportAdapter
     {
         if (cell.TryGetValue<DateTime>(out var date)) return date.Date == target.Date;
         return DateTime.TryParse(cell.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out date) && date.Date == target.Date;
-    }
-    static decimal ReadAmount(IXLCell cell, string source)
-    {
-        var value = cell.HasFormula ? cell.CachedValue : cell.Value;
-        if (value.Type == XLDataType.Number) return DataValue.Decimal(value.GetNumber().ToString("R", CultureInfo.InvariantCulture), source);
-        if (cell.HasFormula) throw new InvalidDataException(source + "：公式缺少可靠数值缓存");
-        return DataValue.Decimal(cell.GetString(), source);
     }
 }

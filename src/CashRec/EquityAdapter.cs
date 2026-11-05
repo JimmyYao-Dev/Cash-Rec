@@ -27,16 +27,9 @@ public sealed class EquityAdapter : IReportAdapter
         var groups = new Dictionary<EquityKey, Balance>();
         var excluded = new Dictionary<string, int>(StringComparer.Ordinal);
         var sourceRecords = 0;
-        var headerChecked = false;
-
-        foreach (var source in CsvData.Read(path))
+        foreach (var source in CsvData.Read(path, requiredHeaders: ["dt_report", "report_jurisdiction", "is_ib", "positive_equity", "currency"]))
         {
             sourceRecords++;
-            if (!headerChecked)
-            {
-                RequireHeaders(source, path);
-                headerChecked = true;
-            }
             if (sourceRecords % 10000 == 0)
                 context.Progress?.Invoke($"处理 Equity：{sourceRecords:N0} 条源记录");
 
@@ -48,28 +41,15 @@ public sealed class EquityAdapter : IReportAdapter
             }
             if (!bool.TryParse(DataValue.Get(source, "is_ib"), out var isIb))
             {
-                table.Diagnostics.Add(new("Error", Name,
-                    $"{Path.GetFileName(path)} 第 {sourceRecords} 条记录：is_ib 必须为 true 或 false"));
-                continue;
+                throw new InvalidDataException($"{Path.GetFileName(path)} 第 {sourceRecords} 条记录：is_ib 必须为 true 或 false");
             }
             var currency = DataValue.Get(source, "currency").ToUpperInvariant();
             if (currency.Length == 0)
             {
-                table.Diagnostics.Add(new("Error", Name,
-                    $"{Path.GetFileName(path)} 第 {sourceRecords} 条记录：currency 为空"));
-                continue;
+                throw new InvalidDataException($"{Path.GetFileName(path)} 第 {sourceRecords} 条记录：currency 为空");
             }
-            decimal amount;
-            try
-            {
-                amount = DataValue.Decimal(DataValue.Get(source, "positive_equity"),
-                    $"{Path.GetFileName(path)} 第 {sourceRecords} 条记录 positive_equity");
-            }
-            catch (InvalidDataException error)
-            {
-                table.Diagnostics.Add(new("Error", Name, error.Message));
-                continue;
-            }
+            var amount = DataValue.Decimal(DataValue.Get(source, "positive_equity"),
+                $"{Path.GetFileName(path)} 第 {sourceRecords} 条记录 positive_equity");
 
             var key = new EquityKey(branch, isIb ? "IB" : "Standard", currency);
             if (!groups.TryGetValue(key, out var group))
@@ -111,6 +91,7 @@ public sealed class EquityAdapter : IReportAdapter
                 ["Source Filter"] = $"report_jurisdiction => {key.Branch}; is_ib => {key.RetailType}; currency={key.Currency}",
             });
         }
+        if (sourceRecords == 0) table.Diagnostics.Add(new("Warning", Name, "CSV表头有效，但没有权益数据记录"));
         foreach (var (reason, count) in excluded.OrderBy(pair => pair.Key, StringComparer.Ordinal))
             table.Diagnostics.Add(new("Warning", Name, $"排除 {count} 条记录：{reason}"));
         table.Diagnostics.Add(new("Info", Name,
@@ -118,12 +99,4 @@ public sealed class EquityAdapter : IReportAdapter
         return table;
     }
 
-    static void RequireHeaders(IReadOnlyDictionary<string, string> row, string path)
-    {
-        string[] required = ["dt_report", "report_jurisdiction", "is_ib", "positive_equity", "currency"];
-        var missing = required.Where(name => !row.Keys.Any(key =>
-            DataValue.Normalize(key) == DataValue.Normalize(name))).ToArray();
-        if (missing.Length > 0)
-            throw new InvalidDataException($"{Path.GetFileName(path)}：缺少 Equity 表头 {string.Join(", ", missing)}");
-    }
 }

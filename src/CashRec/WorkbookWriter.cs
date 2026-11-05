@@ -11,7 +11,8 @@ public static class WorkbookWriter
     public static void Write(string path, IList<ReportTable> tables)
     {
         using var workbook = new XLWorkbook();
-        workbook.CustomProperties.Add("CashRecRules", "PRD1.6-ASIC-VFSC");
+        workbook.CustomProperties.Add("CashRecRules", ReportPolicy.EntityRules);
+        workbook.CustomProperties.Add("CashRecValuation", ReportPolicy.Valuation);
         workbook.CustomProperties.Add("CashRecVersion", "0.1.0");
         if (tables.Any(table => table.Name == "Equity" && table.Columns.Contains("Previous Date")))
             workbook.CustomProperties.Add("CashRecManualDEP", "1");
@@ -44,7 +45,7 @@ public static class WorkbookWriter
                         case bool boolean: cell.Value = boolean; break;
                         default: cell.Value = value.ToString() ?? ""; break;
                     }
-                    if (columns[c] is "DEP" or "PNL" or "Movement" || columns[c].Contains("USD", StringComparison.OrdinalIgnoreCase))
+                    if (columns[c] is "DEP" or "PNL" or "Movement" or "USD Equivalent" or "Prev USD Equivalent")
                         cell.Style.NumberFormat.Format = "$#,##0.00;[Red]($#,##0.00);$0.00";
                 }
                 rowNumber++;

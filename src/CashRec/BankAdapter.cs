@@ -27,10 +27,9 @@ public sealed class BankAdapter : IReportAdapter
             var path = context.SourcePath(input);
             var records = 0;
             var skipped = 0;
-            foreach (var row in CsvData.Read(path, "Account Number"))
+            foreach (var row in CsvData.Read(path, "Account Number", ["Account Name", "Account Number", "Currency", "EOD balance"]))
             {
                 records++;
-                if (records == 1) RequireHeaders(row, path);
                 var account = DataValue.Account(DataValue.Get(row, "Account Number"));
                 var accountName = DataValue.Get(row, "Account Name");
                 if (account.Length == 0 || DataValue.Normalize(account) is "total" or "totalbalance") { skipped++; continue; }
@@ -49,8 +48,14 @@ public sealed class BankAdapter : IReportAdapter
                 }
                 else
                 {
-                    mapping = candidates[0];
-                    if (reported.Add(key))
+                    var invalid = candidates.SelectMany(candidate => ClassificationErrors(candidate).Select(error => $"行 {candidate.Row}：{error}")).ToArray();
+                    if (invalid.Length > 0)
+                    {
+                        if (reported.Add(key)) table.Diagnostics.Add(new("Error", source,
+                            $"账户 {account} 的 BANK MAPPING 分类无效：{string.Join("；", invalid)}"));
+                    }
+                    else mapping = candidates[0];
+                    if (mapping != null && reported.Add(key))
                     {
                         if (candidates.Count > 1) table.Diagnostics.Add(new("Info", source,
                             $"账户 {account} 的同类映射仅应用一次：BANK MAPPING 行 {string.Join(", ", candidates.Select(m => m.Row))}"));
@@ -92,6 +97,7 @@ public sealed class BankAdapter : IReportAdapter
                     ["Mapping Rows"] = candidates == null ? "" : string.Join(",", candidates.Select(m => m.Row))
                 });
             }
+            if (records == 0) table.Diagnostics.Add(new("Warning", source, "CSV表头有效，但没有银行账户数据记录"));
             table.Diagnostics.Add(new("Info", source, $"读取 {records} 条表头后记录，排除 {skipped} 条总计或非账户记录；账户余额不按相同金额去重"));
         }
         return table;
@@ -127,10 +133,14 @@ public sealed class BankAdapter : IReportAdapter
 
     static string Canonical(string value) => string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
     static string CanonicalSource(string value) => DataValue.Normalize(Path.GetFileNameWithoutExtension(value.Replace('\\', '/').Trim()));
-    static void RequireHeaders(IReadOnlyDictionary<string, string> row, string path)
+    static IEnumerable<string> ClassificationErrors(AccountMapping mapping)
     {
-        foreach (var field in new[] { "Account Name", "Account Number", "Currency", "EOD balance" })
-            if (!row.Keys.Any(key => DataValue.Normalize(key) == DataValue.Normalize(field)))
-                throw new InvalidDataException($"{Path.GetFileName(path)}：缺少银行表头 {field}");
+        if (string.IsNullOrWhiteSpace(mapping.Company)) yield return "Company不能为空";
+        var type = Canonical(mapping.AccountType);
+        if (type is not ("CLIENTS" or "SETTLE")) yield return "Account Type必须为Clients或Settle";
+        if (type == "CLIENTS" && Canonical(mapping.ClientType) is not ("INSTO" or "RETAIL" or "WHOLESALE"))
+            yield return "Clients账户的Client Type必须为Insto、Retail或Wholesale";
+        if (type == "SETTLE" && string.IsNullOrWhiteSpace(mapping.SettleType))
+            yield return "Settle账户的Settle Type不能为空（合法NA保留）";
     }
 }

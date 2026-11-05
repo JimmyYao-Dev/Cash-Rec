@@ -105,6 +105,12 @@ var oldRules = Copy("old-rules.xlsx");
 using (var archive = ZipFile.Open(oldRules, ZipArchiveMode.Update)) Rewrite(archive, "docProps/custom.xml", xml =>
     xml.Descendants().Single(e => (string?)e.Attribute("name") == "CashRecRules").Elements().Single().Value = "old-rules");
 Assert(!BalanceWorkbookReader.HasCurrentRules(oldRules), "Old rules must not be trusted as current allocation");
+Assert(!BalanceWorkbookReader.HasCompatibleManualKeys(oldRules), "Incompatible entity rules must not retain arbitrary manual keys");
+var oldValuation = Copy("old-valuation.xlsx");
+using (var archive = ZipFile.Open(oldValuation, ZipArchiveMode.Update)) Rewrite(archive, "docProps/custom.xml", xml =>
+    xml.Descendants().Single(e => (string?)e.Attribute("name") == "CashRecValuation").Remove());
+Assert(!BalanceWorkbookReader.HasCurrentRules(oldValuation), "Previous balances without current valuation marker must not be trusted");
+Assert(BalanceWorkbookReader.HasCompatibleManualKeys(oldValuation), "Compatible manual key identity must survive valuation policy changes");
 Console.WriteLine("PASS: marker/manual flag, reordered headers, decimal/formula caches, text identifiers, dates, blanks, duplicate records, explicit invalid-cache/header errors, targeted worksheet isolation.");
 Console.WriteLine("Synthetic evidence: " + directory);
 
