@@ -8,13 +8,13 @@ namespace CashRec;
 /// <summary>Reads selected balance sheets without loading transaction worksheets.</summary>
 public static class BalanceWorkbookReader
 {
-    const string RulesMarker = "PRD1.6-ASIC-VFSC";
     static readonly HashSet<string> FinancialHeaders = new(StringComparer.Ordinal)
     {
         "amount", "eodbalance", "usdequivalent", "prevusdequivalent", "previous", "movement", "dep", "pnl", "unitsperusd"
     };
 
-    public static bool HasCurrentRules(string path) => HasProperty(path, "CashRecRules", RulesMarker);
+    public static bool HasCurrentRules(string path) => HasCompatibleManualKeys(path) && HasProperty(path, "CashRecValuation", ReportPolicy.Valuation);
+    public static bool HasCompatibleManualKeys(string path) => HasProperty(path, "CashRecRules", ReportPolicy.EntityRules);
     public static bool HasInitializedDep(string path) => HasProperty(path, "CashRecManualDEP", "1");
 
     static bool HasProperty(string path, string name, string expected) => ReadPackage(path, archive =>

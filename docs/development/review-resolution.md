@@ -19,3 +19,9 @@ The originating Standards and Spec reviews compared baseline `5dff3dd` with cand
 Developer regression programs passed: ReviewRegression, Regression, BankRegression, PspRegression, ReaderRegression and PreviousRegression. The PSP program requires a generated good workspace argument. PreviousRegression requires both good and no-previous workspace arguments; internal execution does not replace installed GUI acceptance.
 
 The fixture generator now provides `equity-bad-header`, `mt4-bad-header`, `bank-bad-header` and `bank-empty-classification`. The installed GUI harness remains unchanged and is owned by the acceptance task. Real production inputs and financial records were not added to this repository.
+
+## Confirmed-policy follow-up
+
+The historical rate-file compatibility fix and explicit user rules are documented in `docs/business-confirmations.md`. PolicyRegression independently verifies selected-day and prior-day rates, cached Symb text, fixed USDT valuation, canonical missing base/cents units, true-blank PSP zero and strict consumed formula caches. `confirmed-policies` supplies a real installed-GUI fixture with independently hard-coded Equity totals 247.5/196/51.5 and PSP totals 165/200/−35 for current USD/previous USD/Movement.
+
+Previous balance snapshots must have both the current entity rule marker and current valuation marker. An old valuation snapshot is rebuilt from raw inputs or explicitly rejected as a missing basis; compatible manual DEP values remain separately eligible for preservation. ReaderRegression and PreviousRegression cover that distinction.

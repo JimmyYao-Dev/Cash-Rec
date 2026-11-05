@@ -4,7 +4,7 @@ using CashRec;
 var workspace = Path.GetFullPath(args[0]);
 var date = new DateTime(2026, 10, 25);
 var check = WorkspaceInputs.Inspect(workspace, date);
-var context = new RunContext(date, check.DateDirectory, check.Inputs, check.MappingPath, DailyRates.Load(check.Inputs["Rates"]));
+var context = new RunContext(date, check.DateDirectory, check.Inputs, check.MappingPath, DailyRates.Load(check.Inputs["Rates"], date));
 var result = new PspAdapter().Process(context);
 using var oracle = JsonDocument.Parse(File.ReadAllText(Path.Combine(workspace, "expected.json")));
 var expected = oracle.RootElement.GetProperty("sheets").GetProperty("PSP");
@@ -22,7 +22,7 @@ if (args.Length > 1)
 {
     var missing = WorkspaceInputs.Inspect(Path.GetFullPath(args[1]), date);
     var failed = false;
-    try { new PspAdapter().Process(new(date, missing.DateDirectory, missing.Inputs, missing.MappingPath, DailyRates.Load(missing.Inputs["Rates"]))); }
+    try { new PspAdapter().Process(new(date, missing.DateDirectory, missing.Inputs, missing.MappingPath, DailyRates.Load(missing.Inputs["Rates"], date))); }
     catch (InvalidDataException error) { failed = error.Message.Contains("2026.10.25"); }
     Assert(failed, "Missing PSP date rejected");
 }

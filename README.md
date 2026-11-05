@@ -22,6 +22,8 @@ Required input names:
 
 The folder date identifies the report. Prepared CSV files retain all source dates. PSP balances use only the selected folder date. Missing inputs, rates or valid prior balances are reported instead of being replaced with zero.
 
+Rate tables with history use the selected business date. USDT is valued as USD at a fixed rate of 1. A truly blank selected-date PSP Amount is zero; invalid text and formulas without saved numeric values still require correction.
+
 For Previous and Movement, keep earlier dated folders alongside the selected date folder, with generated `CashRec_Base.xlsx` at the top of each date folder. The tool uses the latest earlier balance workbook made under the current rules, or rebuilds a basis from that earlier folder's Equity, NAB AU/GL, PSP and rate inputs. Earlier transactions and BANK BD files are not needed for the balance basis. If no valid basis is available, current balances can be generated as incomplete results; Previous, Movement and PNL stay blank until a valid basis is supplied.
 
 The base workbook has Equity, Bank, PSP and TransactionExchange sheets. Partial results and missing prerequisites are explicitly identified. Excel is used for subsequent manual edits and formula interaction; an output workbook is not proof that manual reconciliation is complete.

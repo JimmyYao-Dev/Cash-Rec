@@ -52,7 +52,7 @@ public sealed class PspAdapter : IReportAdapter
             var currency = row.Cell(layout.Currency).GetString().Trim().ToUpperInvariant();
             if (way.Length == 0 || currency.Length == 0)
                 throw new InvalidDataException($"PSP {layout.Sheet.Name}!{row.RowNumber()}：WAY/CURR不能为空");
-            var amount = ExcelNumbers.Read(row.Cell(layout.Amount), $"PSP {layout.Sheet.Name} 第{row.RowNumber()}行 Amount");
+            var amount = ExcelNumbers.Read(row.Cell(layout.Amount), $"PSP {layout.Sheet.Name} 第{row.RowNumber()}行 Amount", allowBlankZero: true);
             var rate = context.Rates.Get(currency);
             mappings.TryGetValue(Key(source, way, currency), out var matches);
             var company = matches?.Select(m => m.Company).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? [];

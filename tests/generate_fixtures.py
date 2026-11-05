@@ -23,6 +23,7 @@ SCENARIOS = (
     "bank-conflict", "missing-psp-date", "missing-input", "unknown-bank",
     "no-previous", "corrupt-bank-bd",
     "equity-bad-header", "mt4-bad-header", "bank-bad-header", "bank-empty-classification",
+    "confirmed-policies",
 )
 EQUITY_HEADERS = [
     "dt_report", "report_jurisdiction", "login", "is_ib", "group", "user_id",
@@ -235,6 +236,32 @@ def apply_scenario(root: Path, scenario: str) -> None:
             for column in (4, 6, 8):
                 book["BANK MAPPING"].cell(row, column).value = None
         book.save(path)
+    elif scenario == "confirmed-policies":
+        for day in (PREVIOUS, CURRENT):
+            day_needed = root / day.strftime("%Y.%m.%d") / "Needed files"
+            # Independent source change: this equity balance is now denominated in USDT.
+            equity_path = day_needed / "MT4/Risk/Accounting Equity Report.csv"
+            with equity_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.reader(handle))
+            for row in rows[1:]:
+                if row[9] == "EUR":
+                    row[9] = "USDT"
+            write_csv(equity_path, rows[0], rows[1:])
+            rate_path = day_needed / "Rate/VFSC Rate.xlsx"
+            book = load_workbook(rate_path)
+            sheet = book.active
+            # Foreign-rate tables need not contain a USD identity row.
+            for row_number in range(sheet.max_row, 1, -1):
+                if sheet.cell(row_number, 2).value == "USD":
+                    sheet.delete_rows(row_number)
+            sheet.append([day, "USDT", "USDT Tether", 0.97, 1 / 0.97, "market rate must be ignored"])
+            if day == CURRENT:
+                sheet.append([CURRENT - timedelta(days=1), "AUD", "AUD Australian Dollar", 0.5, 2, "historical decoy"])
+            book.save(rate_path)
+        path = needed / "PSP+BANK/PSP Balance Summary.xlsx"
+        book = load_workbook(path)
+        book["OCT.2026"]["G3"] = None
+        book.save(path)
 
 
 def main() -> None:
@@ -255,7 +282,17 @@ def main() -> None:
     write_mapping(root / "db/tmc/account_mapping.xlsx", args.scenario == "bank-conflict", args.supplement_psp)
     apply_scenario(root, args.scenario)
     oracle = Path(__file__).resolve().parent / "fixtures/expected.json"
-    (root / "expected.json").write_text(oracle.read_text(encoding="utf-8"), encoding="utf-8")
+    expected = json.loads(oracle.read_text(encoding="utf-8"))
+    if args.scenario == "confirmed-policies":
+        equity = expected["sheets"]["Equity"]
+        row = next(row for row in equity["rows"] if row["Currency"] == "EUR")
+        row.update({"Currency": "USDT", "USD Equivalent": 37.5, "Prev USD Equivalent": 25, "Movement": 12.5})
+        equity.update({"total_usd": 247.5, "total_previous_usd": 196, "total_movement": 51.5})
+        psp = expected["sheets"]["PSP"]
+        row = next(row for row in psp["rows"] if row["Source"] == "PSPAU" and row["PSP"] == "Gateway-A")
+        row.update({"Amount": 0, "USD Equivalent": 0, "Movement": -80})
+        psp.update({"total_usd": 165, "total_previous_usd": 200, "total_movement": -35})
+    (root / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (root / MARKER).write_text(json.dumps({"synthetic": True, "scenario": args.scenario, "days": [d.strftime("%Y.%m.%d") for d in days]}, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"fixture": str(root), "scenario": args.scenario, "days": len(days), "synthetic_only": True}))
 
