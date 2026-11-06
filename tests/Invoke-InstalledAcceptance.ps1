@@ -7,6 +7,7 @@ param(
  [ValidateSet('Complete','Partial','Failure','PreflightReady','PreflightFailure')][string]$ExpectedOutcome='Complete',
  [string]$ExpectedMonthlyStage,
  [ValidateSet('Complete','Incomplete')][string]$ExpectedMonthlyStageOutcome,
+ [string]$ExpectedVersion,
  [int]$TimeoutSeconds=120,
  [string]$CaseScale='synthetic-small',
  [switch]$PreflightOnly,
@@ -129,6 +130,8 @@ try {
  if($null -eq $window){throw 'Installed window unavailable. On Windows, run this harness in the interactive user desktop; the restricted sandbox desktop cannot see user windows.'}
  $launchWatch.Stop()
  $result.Measurements.LaunchToWindowMilliseconds=[math]::Round($launchWatch.Elapsed.TotalMilliseconds,1)
+ $result.WindowTitle=$window.Current.Name
+ if($ExpectedVersion -and ($result.WindowTitle -notlike ('*'+$ExpectedVersion+'*') -or -not $result.Measurements.AppFileVersion.StartsWith($ExpectedVersion))){throw 'The installed window or executable version differs from the expected release.'}
  $workspaceControl=Find-Control $window 'workspaceBox'
  $workspaceControl.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($Workspace)
  $dateControl=Find-Control $window 'businessDatePicker'
