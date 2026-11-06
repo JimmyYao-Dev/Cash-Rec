@@ -13,7 +13,7 @@ import generate_fixtures as daily
 
 MARKER = ".cashrec-monthly-test-fixture.json"
 DATES = [datetime(2026, 10, 19), daily.PREVIOUS, daily.CURRENT]
-SCENARIOS = ("good", "no-previous", "pending-uncached", "pending-wrong-total", "pending-duplicate", "pending-missing-entity", "flow-source-collision", "flows-mixed", "comment-keywords")
+SCENARIOS = ("good", "no-previous", "pending-uncached", "pending-wrong-total", "pending-duplicate", "pending-missing-entity", "flow-source-collision", "flows-mixed", "comment-keywords", "commission-aliases")
 PENDING = {
     "2026.10.19": {"TMA": (800, 750, 50), "TMG": (1700, 1580, 120)},
     "2026.10.22": {"TMA": (900, 820, 80), "TMG": (1800, 1650, 150)},
@@ -108,6 +108,19 @@ def comment_keyword_inputs(path: Path) -> None:
     book.save(path)
 
 
+def commission_alias_inputs(path: Path) -> None:
+    book=load_workbook(path);sheet=book["BANK BD"]
+    for row in sheet.iter_rows(min_row=2):
+        if row[2].value=="PSP CN Commission":
+            row[1].value=25;row[2].value="  pSp   CN   Commission  ";row[3].value="tf fee"
+            row[4].value="AUD";row[5].value="TMA-Retail";row[6].value=-25
+        elif row[2].value=="PSP Commission":
+            row[1].value=6.25;row[2].value="Alias commission B";row[3].value="  PSP    Commission  "
+            row[4].value="EUR";row[5].value="TMG-Retail";row[6].value=-6.25
+    sheet.append([None,8,"Unrelated commission-like fee","PSP Commission Fee","USD","TMA-Retail",-8])
+    book.save(path)
+
+
 def write_comment_policy_oracles(root: Path) -> None:
     """Write expectations only; existing synthetic input bytes are never changed."""
     marker=json.loads((root/MARKER).read_text(encoding="utf-8"))
@@ -183,6 +196,8 @@ def generate(root: Path, scenario: str) -> None:
             flow_collision_inputs(needed, scenario == "flows-mixed")
         if scenario == "comment-keywords":
             comment_keyword_inputs(needed / "PSP+BANK/BANK BD.xlsx")
+        if scenario == "commission-aliases":
+            commission_alias_inputs(needed / "PSP+BANK/BANK BD.xlsx")
         pending_snapshot(needed / "PSP+BANK/BANK BD.xlsx", day, scenario)
     daily.write_mapping(root / "db/tmc/account_mapping.xlsx")
     oracle = Path(__file__).parent / "fixtures/monthly_expected.json"
@@ -242,6 +257,14 @@ def generate(root: Path, scenario: str) -> None:
                 "Transaction Type":expected_type,"Branch":branch,"Type":"Retail","Currency":"USD","Amount":amount,"USD Equivalent":amount})
         transactions["total_usd"]=2726
         transactions["source_totals_usd"]["BANK BD"]=2476
+    if scenario == "commission-aliases":
+        row=next(r for r in transactions["rows"] if r["Source"]=="BANK BD" and r["Comment"]=="PSP CN Commission")
+        row.update({"Comment":"  pSp   CN   Commission  ","Rational":"tf fee","Type":"Retail","Currency":"AUD","Amount":-25})
+        row=next(r for r in transactions["rows"] if r["Source"]=="BANK BD" and r["Comment"]=="PSP Commission")
+        row.update({"Comment":"Alias commission B","Rational":"  PSP    Commission  ","Type":"Retail","Currency":"EUR","Amount":-6.25})
+        transactions["rows"].append({"Source":"BANK BD","Comment":"Unrelated commission-like fee","Rational":"PSP Commission Fee",
+            "Branch":"TMA","Type":"Retail","Transaction Type":"Bank Fee","Currency":"USD","Amount":-8,"USD Equivalent":-8})
+        transactions["total_usd"]=2653;transactions["source_totals_usd"]["BANK BD"]=2403
     (root / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (root / MARKER).write_text(json.dumps({"synthetic_only": True, "scenario": scenario, "dates": [d.strftime("%Y.%m.%d") for d in days]}, indent=2) + "\n", encoding="utf-8")
     write_comment_policy_oracles(root)
