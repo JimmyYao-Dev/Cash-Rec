@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 
 namespace CashRec;
 
@@ -16,7 +15,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
             if (table.Rows.Select(row => Key(table.Name, row)).Distinct().Count() != table.Rows.Count)
                 throw new InvalidDataException(table.Name + "存在重复余额业务键，不能任选一条作为上期或当前余额");
 
-        var previous = FindPrevious(context, diagnostics);
+        var previous = FindPrevious(context, balances, diagnostics);
         context.PreviousBalances = previous;
         var manual = ReadManualDep(context);
         var matchedManual = new HashSet<string>();
@@ -36,8 +35,8 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                 if (table.Name == "Equity")
                 {
                     EnsureColumns(table, "DEP", "PNL");
-                    if (manual.TryGetValue(key, out var saved)) { dep = saved; matchedManual.Add(key); }
-                    row["DEP"] = dep;
+                    if (manual.TryGetValue(key, out var saved)) { dep = saved.Value; matchedManual.Add(key); }
+                    row["DEP"] = saved ?? (object?)dep;
                     row["PNL"] = null;
                 }
                 row["Prev USD Equivalent"] = row["Movement"] = row["Previous Date"] = row["Previous Source"] = null;
@@ -58,15 +57,15 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
         var unmatched = manual.Where(pair => !matchedManual.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value);
         if (unmatched.Count > 0)
         {
-            var path = Path.Combine(context.DateDirectory, "Equity_UnmatchedDEP_" + DateTime.Now.ToString("yyyyMMdd_HHmmssfff") + ".json");
-            File.WriteAllText(path, JsonSerializer.Serialize(unmatched, new JsonSerializerOptions { WriteIndented = true }));
-            diagnostics.Add(new("Warning", "人工DEP", $"{unmatched.Count}个旧人工键本次不存在，已单独保留：{path}"));
+            foreach (var (key, saved) in unmatched)
+                context.UnmatchedManual.Add(new(context.BusinessDate, "Equity", saved.DisplayKey, "DEP", saved.Value, saved.NumberFormat, "旧业务键本次不存在"));
+            diagnostics.Add(new("Warning", "人工DEP", $"{unmatched.Count}个旧人工键本次不存在，将在成功提交时另存未匹配清单"));
         }
         if (previous != null)
             diagnostics.Add(new("Info", "上期余额", $"使用{previous.Date:yyyy.MM.dd}的同口径余额；实体重分类不作为当日资金变动"));
     }
 
-    static PreviousBalanceSnapshot? FindPrevious(RunContext context, List<Diagnostic> diagnostics)
+    static PreviousBalanceSnapshot? FindPrevious(RunContext context, IList<ReportTable> current, List<Diagnostic> diagnostics)
     {
         var parent = Directory.GetParent(context.DateDirectory)?.FullName;
         if (parent == null) return null;
@@ -78,6 +77,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
         {
             var date = candidate.Date!.Value;
             var path = Path.Combine(candidate.Path, "CashRec_Base.xlsx");
+            PreviousBalanceSnapshot? cached = null;
             if (File.Exists(path))
             {
                 try
@@ -94,9 +94,11 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                             values[name] = Index(name, rows);
                             tables[name] = rows;
                         }
-                        return new(date, candidate.Path, path, values, tables);
+                        cached = new(date, candidate.Path, path, values, tables);
+                        if (current.All(table => table.Rows.All(row => values[table.Name].ContainsKey(Key(table.Name, row))))) return cached;
+                        diagnostics.Add(new("Warning", "上期余额", $"{date:yyyy.MM.dd}缓存缺少当前业务键，尝试按同日原始输入重算完整余额；不把缺键当零"));
                     }
-                    diagnostics.Add(new("Warning", "上期余额", $"{date:yyyy.MM.dd}已有结果不具备当前实体/估值口径标记，将尝试按当前规则重算原始余额"));
+                    else diagnostics.Add(new("Warning", "上期余额", $"{date:yyyy.MM.dd}已有结果不具备当前实体/估值口径标记，将尝试按当前规则重算原始余额"));
                 }
                 catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException)
                 { diagnostics.Add(new("Warning", "上期余额", $"无法使用{date:yyyy.MM.dd}已存余额：{error.Message}；尝试原始输入")); }
@@ -125,7 +127,14 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                 return new(date, candidate.Path, candidate.Path + "（按当前规则重算）", values, tables);
             }
             catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException or InvalidOperationException)
-            { diagnostics.Add(new("Warning", "上期余额", $"跳过无效基准{date:yyyy.MM.dd}：{error.Message}")); }
+            {
+                if (cached != null)
+                {
+                    diagnostics.Add(new("Warning", "上期余额", $"{date:yyyy.MM.dd}同日原始余额无法重算：{error.Message}；保留该日有效缓存，缺失键仍为空，不跳用更早日期"));
+                    return cached;
+                }
+                diagnostics.Add(new("Warning", "上期余额", $"跳过无效基准{date:yyyy.MM.dd}：{error.Message}"));
+            }
         }
         return null;
     }
@@ -142,18 +151,21 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
         return result;
     }
 
-    static Dictionary<string, decimal?> ReadManualDep(RunContext context)
+    static Dictionary<string, PreservedManualCell> ReadManualDep(RunContext context)
     {
         var path = Path.Combine(context.DateDirectory, "CashRec_Base.xlsx");
-        var result = new Dictionary<string, decimal?>(StringComparer.Ordinal);
+        var result = new Dictionary<string, PreservedManualCell>(StringComparer.Ordinal);
         if (!File.Exists(path) || !BalanceWorkbookReader.HasCompatibleManualKeys(path) || !BalanceWorkbookReader.HasInitializedDep(path)) return result;
-        foreach (var row in BalanceWorkbookReader.ReadRows(path, "Equity", ["Date", "Branch", "Retail Type", "Currency", "DEP"]))
+        foreach (var row in BalanceWorkbookReader.ReadRowsWithAddresses(path, "Equity", ["Date", "Branch", "Retail Type", "Currency", "DEP"]))
         {
             if (row.GetValueOrDefault("Date") is not DateTime date || date.Date != context.BusinessDate)
                 throw new InvalidDataException("现有Equity的日期与目录不一致，无法安全保留DEP");
             var key = Key("Equity", row);
             var value = row.GetValueOrDefault("DEP");
-            if (!result.TryAdd(key, value == null ? null : Number(value, "现有人工DEP")))
+            var address = (string)row["__Cell:DEP"]!;
+            var saved = new PreservedManualCell(value == null ? null : Number(value, "现有人工DEP"), path, "Equity", address, ManualStyleTransfer.NumberFormat(path, "Equity", address),
+                string.Join("/", new[] { "Branch", "Retail Type", "Currency" }.Select(field => row[field]?.ToString()?.Trim())));
+            if (!result.TryAdd(key, saved))
                 throw new InvalidDataException("现有Equity人工DEP业务键重复，不能任选一条");
         }
         return result;

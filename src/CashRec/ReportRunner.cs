@@ -10,18 +10,35 @@ public static class ReportRunner
         .OrderBy(type => type.Name).Select(type => (IReportAdapter)Activator.CreateInstance(type)!);
 
     public static RunResult Run(string workspace, DateTime date, Action<string>? progress = null)
-        => RunDetailed(workspace, date, progress).Result;
-
-    internal static DailyRunArtifacts RunDetailed(string workspace, DateTime date, Action<string>? progress = null)
     {
-        var check = WorkspaceInputs.Inspect(workspace, date);
+        var daily = Prepare(workspace, date, progress);
+        using var output = daily.PreparedOutput;
+        using var unmatched = daily.Context == null ? null : UnmatchedManualReport.Prepare(daily.Context.DateDirectory,
+            Guid.NewGuid().ToString("N"), daily.Context.UnmatchedManual);
+        if (output == null) return Finish(null, daily.Result.DiagnosticPath, false, daily.Result.Diagnostics);
+        try
+        {
+            OutputTransaction.Commit(unmatched == null ? [output] : [output, unmatched], new TransactionStatus());
+            return Finish(output.Destination, daily.Result.DiagnosticPath, daily.Result.IsComplete, daily.Result.Diagnostics);
+        }
+        catch (Exception error)
+        {
+            daily.Result.Diagnostics.Add(new("Error", "保存基础报表", error.Message));
+            return Finish(null, daily.Result.DiagnosticPath, false, daily.Result.Diagnostics);
+        }
+    }
+
+    internal static DailyRunArtifacts Prepare(string workspace, DateTime date, Action<string>? progress = null, PreflightResult? preflight = null)
+    {
+        var check = preflight ?? WorkspaceInputs.Inspect(workspace, date);
         var diagnostics = check.Diagnostics;
         var diagnosticPath = DiagnosticPath(workspace, date);
         RunContext? context = null;
         var tables = new List<ReportTable>();
-        DailyRunArtifacts Complete(string? output, bool complete) =>
-            new(Finish(output, diagnosticPath, complete, diagnostics), context, tables);
-        if (!check.CanRun) return Complete(null, false);
+        PreparedFile? prepared = null;
+        DailyRunArtifacts Complete(bool complete) =>
+            new(new(null, diagnosticPath, complete, diagnostics), context, tables, prepared);
+        if (!check.CanRun) return Complete(false);
         try
         {
             progress?.Invoke("读取每日汇率");
@@ -47,29 +64,19 @@ public static class ReportRunner
             var ready = WorkbookWriter.SheetNames.All(name => tables.Any(t => t.Name == name)) && finalizers.Count > 0
                 && !diagnostics.Any(d => d.Severity == "Incomplete");
             if (!ready) diagnostics.Add(new("Warning", "基础报表", "本次基础报表尚不完整；请查看已生成的表与诊断记录"));
-            if (diagnostics.Any(d => d.Severity == "Error")) return Complete(null, false);
-            if (tables.Count == 0) return Complete(null, false);
+            if (diagnostics.Any(d => d.Severity == "Error")) return Complete(false);
+            if (tables.Count == 0) return Complete(false);
             var output = Path.Combine(check.DateDirectory, "CashRec_Base.xlsx");
-            var temporary = Path.Combine(check.DateDirectory, ".CashRec-" + Guid.NewGuid().ToString("N") + ".xlsx");
-            try
-            {
-                progress?.Invoke("保存基础报表");
-                WorkbookWriter.Write(temporary, tables);
-                if (File.Exists(output))
-                {
-                    var backups = Path.Combine(check.DateDirectory, "backups");
-                    Directory.CreateDirectory(backups);
-                    File.Copy(output, Path.Combine(backups, "CashRec_Base-" + DateTime.Now.ToString("yyyyMMdd-HHmmssfff") + ".xlsx"));
-                }
-                File.Move(temporary, output, true);
-            }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
-            return Complete(output, ready);
+            prepared = new(output, OutputTransaction.TemporaryFor(output), Path.Combine(check.DateDirectory, "backups"));
+            progress?.Invoke("准备基础报表");
+            WorkbookWriter.Write(prepared.TemporaryPath, tables);
+            return Complete(ready);
         }
         catch (Exception error)
         {
             diagnostics.Add(new("Error", "处理阶段", error.Message));
-            return Complete(null, false);
+            prepared?.Dispose(); prepared = null;
+            return Complete(false);
         }
     }
 

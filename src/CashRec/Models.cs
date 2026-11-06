@@ -27,6 +27,7 @@ public sealed class RunContext(DateTime businessDate, string dateDirectory,
     public DailyRates Rates { get; } = rates;
     public Action<string>? Progress { get; } = progress;
     internal PreviousBalanceSnapshot? PreviousBalances { get; set; }
+    internal List<UnmatchedManualEntry> UnmatchedManual { get; } = [];
     public string SourcePath(string key) => Inputs.TryGetValue(key, out var path)
         ? path : throw new InvalidDataException($"缺少输入：{key}");
 }
@@ -51,7 +52,9 @@ public sealed record PreflightResult(DateTime BusinessDate, string DateDirectory
 public sealed record RunResult(string? OutputPath, string DiagnosticPath, bool IsComplete,
     List<Diagnostic> Diagnostics);
 
-internal sealed record DailyRunArtifacts(RunResult Result, RunContext? Context, IList<ReportTable> Tables);
+internal sealed record DailyRunArtifacts(RunResult Result, RunContext? Context, IList<ReportTable> Tables, PreparedFile? PreparedOutput = null);
+
+internal sealed record UnmatchedManualEntry(DateTime? Date, string Sheet, string Key, string Field, decimal? Value, string NumberFormat, string Reason);
 
 internal sealed record PreviousBalanceSnapshot(DateTime Date, string DateDirectory, string Source,
     Dictionary<string, Dictionary<string, decimal>> Values,
