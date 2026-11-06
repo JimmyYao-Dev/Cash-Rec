@@ -38,6 +38,14 @@ Overall Success requires every selected day to succeed. Any published output com
 
 `CashRec.BatchRegression` checks calendar endpoints/order, cross-month one-time carry, complete multi-date CSV records, each folder's PSP column, repeated range upsert, missing folder/file/PSP date versus duplicate ambiguity, blocked prior, preserved earlier result paths, reverse-range byte/no-day-write protection and direct-date-folder resolution. Its optional `--layout` mode checks only developer form layout/toggle behavior at default/minimum sizes. Installed GUI and owned Excel remain the business acceptance gate.
 
+## Diagnostic-record publication failures
+
+Workbook submission and diagnostic-record publication are separate outcomes. Task results keep their true Transaction status, committed workbook/manual-list paths and recovery inventory if the final task record cannot be saved. Such a task has Complete=false, DiagnosticWritten=false, DiagnosticPath=null, DiagnosticAttemptedPath set to the failed target, and DiagnosticWriteFailed. Its valid automatic sheet values and MonthlyStageComplete are not erased or retroactively rolled back. The single-date interface displays the saved workbook paths and the record failure, and opens their actual result directory.
+
+A range day with a committed pair but an unwritten task record is Partial, preserving its Transaction, outputs and diagnostic-write metadata. Later dates continue. A batch-record failure likewise retains every per-day status/path and returns overall Partial when reports exist; it does not advertise the unavailable record as written. Only DiagnosticPath with DiagnosticWritten=true names an available record; the attempted target is for explaining the failure. Complete JSON is prepared to a temporary file and renamed into place so a partial JSON write is not offered as a valid task record. The related developer-only daily entry follows the same post-commit path-preservation rule.
+
+`CashRec.DiagnosticRegression` injects actual diagnostics-only filesystem I/O failures around production tasks, checks single/batch/summary-only outcomes and later-date continuation, and retains auxiliary before/after evidence separately from installed-GUI acceptance. No hidden application fault mode is introduced. Test fixture XML patching is centralized in `tests/xlsx_xml.py`; literal-cell writes remove old formulas while numeric cache writes preserve formulas/styles, both retaining original namespace scopes and validating compatibility prefixes. No test helper reserializes a worksheet through ElementTree.
+
 ## Balances and difference basis
 
 Bank USD Equivalent is grouped by Branch, Account Type=Clients and Client Type=Insto/Retail/Wholesale. Settle includes all Account Type=Settle records without inventing a Settle Type filter. PSP groups all in-scope source-derived entity rows, including a newly discovered channel with incomplete optional mapping.

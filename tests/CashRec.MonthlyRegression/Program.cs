@@ -57,7 +57,7 @@ static void Run(string fixture, bool baselineOnly)
         Assert(breakdown.Cell("P2").FormulaA1 == "F2-G2-H2-I2-J2-K2-L2-M2-N2", "Original Check subtraction formula remains unchanged");
         Assert(breakdown.Cell("G2").Style.NumberFormat.Format == "\"$\"#,##0.00;[Red]\\-\"$\"#,##0.00", "Original To LP format retained");
     }
-    using (var json = JsonDocument.Parse(File.ReadAllText(result.DiagnosticPath)))
+    using (var json = JsonDocument.Parse(File.ReadAllText(result.DiagnosticPath!)))
     {
         Assert(json.RootElement.GetProperty("MonthlyStage").GetString() == "Check"
             && json.RootElement.GetProperty("MonthlyStageComplete").GetBoolean()
