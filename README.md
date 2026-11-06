@@ -28,7 +28,9 @@ For Previous and Movement, keep earlier dated folders alongside the selected dat
 
 The base workbook has Equity, Bank, PSP and TransactionExchange sheets. Partial results and missing prerequisites are explicitly identified. Excel is used for subsequent manual edits and formula interaction; an output workbook is not proof that manual reconciliation is complete.
 
-The separate monthly workbook is saved beside the dated folders, at `monthly/CashRec_Breakdown_YYYY.MM.xlsx`. It contains TMA, TMG, Total and Break down. The current monthly stage supplies balances, PSP Pending, DIFF, SETTLE PNL and client-flow totals. PSP DEP/WITH, NET PSP and NET BW use the Transaction reports source; NET WS uses BANK BD Wholesale. Final Breakdown/Check stages are not yet complete. Blank downstream fields are not calculated zeroes.
+The separate monthly workbook is saved beside the dated folders, at `monthly/CashRec_Breakdown_YYYY.MM.xlsx`. It contains TMA, TMG, Total and Break down. The current monthly stage supplies balances, PSP Pending, DIFF, SETTLE PNL, client-flow totals and the main Breakdown difference. PSP DEP/WITH, NET PSP and NET BW use the Transaction reports source; NET WS uses BANK BD Wholesale. Settlement/commission and Check are not yet complete. Blank downstream fields are not calculated zeroes.
+
+Break down uses five client balance differences, MT4 net flows and the signed Wholesale net amount. To LP, fees and Time Diff start blank with their original formats for later manual entry; existing manual entries are retained. Error is kept blank. Missing difference inputs leave Client Bank Move and Diff blank instead of showing normal zeroes.
 
 Monthly PSP Pending needs `BANK BD.xlsx` from both the selected date and the valid prior date. Each file must be the snapshot prepared for that specific date. Keep earlier snapshots in their own dated folders; do not replace an old snapshot with a later cumulative file. Missing or unreliable prior Pending leaves its DIFF blank, while a missing prior daily balance basis leaves all balance DIFF blank.
 
