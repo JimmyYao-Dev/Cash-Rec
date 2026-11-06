@@ -7,8 +7,8 @@ Scope: Issues #9–#15. Parent #1 remains open. Each business case starts from t
 | #9 Monthly balances, Pending, DIFF and SETTLE PNL | Passed; confirmed Comment policy also revalidated | Original `9f67fa6`, affected rerun `742d7c1` |
 | #10 Source-specific net flows | Passed; confirmed-policy rerun passed | Original `dbc40ab`, affected rerun `742d7c1` |
 | #11 Breakdown and manual area | Installed GUI/Excel gate passed | App source `2294a62` |
-| #12 Settlement, commission and Check | Implementation in progress | Not yet accepted |
-| #13 Rerun preservation and backups | Pending dependency | Not yet accepted |
+| #12 Settlement, commission and Check | Installed GUI/Excel gate passed | App source `7e913c5` |
+| #13 Rerun preservation and backups | Implementation in progress | Not yet accepted |
 | #14 Monthly append and rollover | Pending dependency | Not yet accepted |
 | #15 Date range and missing dates | Pending dependency | Not yet accepted |
 
@@ -57,3 +57,13 @@ App source `2294a62309ff8a6d98c328a18494f86cf08fe630`; installer SHA256 `D613FE2
 After seeding an old complete C/F263/21, a missing-prior run correctly clears C/F and unavailable DIFF values while preserving usable B/D/E. Old Error 17 and obsolete Pending DIFF placeholder values are cleared without removing formats. Actual owned Excel verifies true blank/nonformula manual cells, then enters negative, numeric zero, blank and −2.5 values and checks types and formats. Check is not required at this stage and overall completion remains false.
 
 Historical 25/22 date-row cases also passed. Two reader invocation setup mistakes (array argument handling and an omitted policy sidecar) were corrected before final assertions; they are not app failures and the source inputs were not changed to fit output. Evidence is under `.scratch/monthly-implementation/acceptance/t11`.
+
+## Issue #12
+
+App source `7e913c5b96b2e90ef1b13d1cc703ce33e4b30c15`; installer SHA256 `2606090A0A557D1010881D20389AC1E788507075F610D2F6B8857AB4B075B829`, 36,983,760 bytes. Ten installed GUI cases, nine monthly oracle sets, an additional preserved-prior-row read and two actual owned Excel Check edits passed.
+
+H/I read the selected day's TMA/TMG SETTLE PNL by field; J is numeric zero; K uses signed USD values for both normalized commission aliases, including AUD/EUR source amounts and whitespace variants. Unrelated fees are excluded and no extra Source filter is imposed. P retains `F−G−H−I−J−K−L−M−N`, without ROUND, a tolerance or a forced-zero result.
+
+Synthetic baseline Check is −332. Actual Excel edits G−5/L0/Mblank/N−2.5 produce −324.5; explicit zero and clearing values also recalculate correctly. Existing manual values also produce the correct exported Check cache before Excel opens. Both first and second data rows were exercised. Missing required DIFF leaves P blank. Historical appending preserves the other date's correct cached Check. Original formats and source workbook hashes were retained, and pre-existing user Excel instances were untouched.
+
+Completion now means the selected day's automatic report generation is complete. A nonzero Check does not prevent that state; it does not mean manual reconciliation, all development tickets or the parent specification are complete. Source-bound output copies and diagnostics are retained in `.scratch/monthly-implementation/acceptance/t12/source-7e913c5-summary.json` and associated case folders.
