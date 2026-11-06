@@ -8,7 +8,7 @@ Windows x64 desktop application for local TMA/TMG reconciliation. Installation r
 2. Select a business workspace and date. Existing dated folders may be directly below the workspace or under `data/risk_and_cash_to_process`.
 3. Place the prepared inputs in that date's `Needed files` folders, or import them using the interface. Import matches the filenames below and preserves source files. Replacing an imported file retains a backup.
 4. Place `account_mapping.xlsx` in workspace `config` or `db/tmc`, or import it.
-5. Check files, then generate the daily base workbook. Open the result location to inspect output and diagnostics.
+5. Check files, then generate reports. The interface lists the daily and monthly result paths and identifies incomplete stages.
 
 Required input names:
 
@@ -27,5 +27,9 @@ Rate tables with history use the selected business date. USDT is valued as USD a
 For Previous and Movement, keep earlier dated folders alongside the selected date folder, with generated `CashRec_Base.xlsx` at the top of each date folder. The tool uses the latest earlier balance workbook made under the current rules, or rebuilds a basis from that earlier folder's Equity, NAB AU/GL, PSP and rate inputs. Earlier transactions and BANK BD files are not needed for the balance basis. If no valid basis is available, current balances can be generated as incomplete results; Previous, Movement and PNL stay blank until a valid basis is supplied.
 
 The base workbook has Equity, Bank, PSP and TransactionExchange sheets. Partial results and missing prerequisites are explicitly identified. Excel is used for subsequent manual edits and formula interaction; an output workbook is not proof that manual reconciliation is complete.
+
+The separate monthly workbook is saved beside the dated folders, at `monthly/CashRec_Breakdown_YYYY.MM.xlsx`. It contains TMA, TMG, Total and Break down. The current monthly stage supplies balances, PSP Pending, DIFF and SETTLE PNL; client-flow and final Breakdown/Check stages are not yet complete. Blank downstream fields are not calculated zeroes.
+
+Monthly PSP Pending needs `BANK BD.xlsx` from both the selected date and the valid prior date. Each file must be the snapshot prepared for that specific date. Keep earlier snapshots in their own dated folders; do not replace an old snapshot with a later cumulative file. Missing or unreliable prior Pending leaves its DIFF blank, while a missing prior daily balance basis leaves all balance DIFF blank.
 
 Upgrading or uninstalling the program preserves the independent business workspace. Back up important results before changing files.

@@ -13,7 +13,7 @@ public static class WorkbookWriter
         using var workbook = new XLWorkbook();
         workbook.CustomProperties.Add("CashRecRules", ReportPolicy.EntityRules);
         workbook.CustomProperties.Add("CashRecValuation", ReportPolicy.Valuation);
-        workbook.CustomProperties.Add("CashRecVersion", "0.1.0");
+        workbook.CustomProperties.Add("CashRecVersion", AppVersion.Current);
         if (tables.Any(table => table.Name == "Equity" && table.Columns.Contains("Previous Date")))
             workbook.CustomProperties.Add("CashRecManualDEP", "1");
         var cachedValues = new Dictionary<string, Dictionary<string, decimal>>();
@@ -65,14 +65,14 @@ public static class WorkbookWriter
         PersistFormulaValues(path, cachedValues);
     }
 
-    static string CellAddress(int column, int row)
+    internal static string CellAddress(int column, int row)
     {
         var letters = "";
         while (column > 0) { column--; letters = (char)('A' + column % 26) + letters; column /= 26; }
         return letters + row.ToString(CultureInfo.InvariantCulture);
     }
 
-    static void PersistFormulaValues(string path, Dictionary<string, Dictionary<string, decimal>> cachedValues)
+    internal static void PersistFormulaValues(string path, Dictionary<string, Dictionary<string, decimal>> cachedValues)
     {
         using var archive = ZipFile.Open(path, ZipArchiveMode.Update);
         XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";

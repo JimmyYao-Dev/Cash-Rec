@@ -8,7 +8,7 @@ public sealed class MainForm : Form
     readonly TextBox workspaceBox = new() { Name = "workspaceBox", AccessibleName = "workspaceBox", Dock = DockStyle.Fill };
     readonly DateTimePicker businessDatePicker = new() { Name = "businessDatePicker", AccessibleName = "businessDatePicker", Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy.MM.dd", Width = 150 };
     readonly Button checkButton = new() { Name = "checkButton", AccessibleName = "checkButton", Text = "检查文件", AutoSize = true };
-    readonly Button runButton = new() { Name = "runButton", AccessibleName = "runButton", Text = "生成基础报表", AutoSize = true };
+    readonly Button runButton = new() { Name = "runButton", AccessibleName = "runButton", Text = "生成报表", AutoSize = true };
     readonly Button importButton = new() { Name = "importButton", AccessibleName = "importButton", Text = "导入文件", AutoSize = true };
     readonly Button openButton = new() { Name = "openButton", AccessibleName = "openButton", Text = "打开结果位置", AutoSize = true, Enabled = false };
     readonly Button browseButton = new() { Name = "browseButton", Text = "选择…", AutoSize = true };
@@ -21,7 +21,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Cash Rec · 0.1.0";
+        Text = "Cash Rec · " + AppVersion.Current;
         Name = "CashRecMain";
         Size = new Size(980, 680);
         MinimumSize = new Size(740, 520);
@@ -132,10 +132,13 @@ public sealed class MainForm : Form
             statusText.Text = $"处理业务日期 {businessDatePicker.Value:yyyy.MM.dd}";
             var workspace = workspaceBox.Text;
             var date = businessDatePicker.Value.Date;
-            var result = await Task.Run(() => ReportRunner.Run(workspace, date, message => ((IProgress<string>)report).Report(message)));
+            var result = await Task.Run(() => ReportTaskRunner.Run(workspace, date, message => ((IProgress<string>)report).Report(message)));
             ShowDiagnostics(result.Diagnostics);
-            if (result.OutputPath != null) statusText.AppendText(Environment.NewLine + "输出：" + result.OutputPath);
-            SetResult(Path.GetDirectoryName(result.OutputPath ?? result.DiagnosticPath)!, result.IsComplete ? "每日基础报表已生成" : result.OutputPath != null ? "已生成部分结果，请查看诊断记录" : "未生成报表，请处理诊断中的问题");
+            if (result.DailyOutput != null) statusText.AppendText(Environment.NewLine + "每日基础表：" + result.DailyOutput);
+            if (result.MonthlyOutput != null) statusText.AppendText(Environment.NewLine + "月度报表：" + result.MonthlyOutput);
+            SetResult(Path.GetDirectoryName(result.MonthlyOutput ?? result.DailyOutput ?? result.DiagnosticPath)!,
+                result.MonthlyStageComplete ? "月度余额已生成；完整月度核对尚未完成"
+                    : result.DailyOutput != null ? "结果不完整，请查看诊断记录" : "未生成报表，请处理诊断中的问题");
         }
         catch (Exception error) { statusText.Text = "处理失败：" + error.Message; resultLabel.Text = "处理失败"; }
         finally

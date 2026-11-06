@@ -30,7 +30,7 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
         var path = context.SourcePath("BankBD");
         var table = new ReportTable(Name);
         table.Columns.AddRange([
-            "Source", "Comment", "Rational", "Company", "Branch", "Type",
+            "Source", "Comment", "Rational", "Company", "Organization", "Branch", "Type",
             "Transaction Type", "Exchange Type", "Date", "Amount", "Currency",
             "Units per USD", "USD Equivalent", "Source File", "Source Sheet",
             "Source Row", "Source Date", "Classification Source",
@@ -90,6 +90,7 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
                         ["Comment"] = comment,
                         ["Rational"] = rational,
                         ["Company"] = company,
+                        ["Organization"] = "TMC",
                         ["Branch"] = branch,
                         ["Type"] = type,
                         ["Transaction Type"] = transactionType,
@@ -142,12 +143,36 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
         }
         var original = CollapseSpaces(rational);
         var category = TransactionTypes.GetValueOrDefault(original, "Other");
+        if (type == "Retail") category = ClassifyRetail(rational, comment, category);
         return (type, category) switch
         {
             ("PSP", "Deposit") => "PSP Dep",
             ("PSP", "Withdrawal") => "PSP WITH",
             _ => category,
         };
+    }
+
+    static string ClassifyRetail(string rational, string comment, string category)
+    {
+        var description = rational.ToLowerInvariant();
+        var label = comment.ToLowerInvariant();
+        bool R(string value) => description.Contains(value, StringComparison.Ordinal);
+        bool C(string value) => label.Contains(value, StringComparison.Ordinal);
+        // Recovered legacy order: every later condition replaces an earlier result.
+        // These apply only to Retail, after Company has been split into Branch/Type.
+        if (R("settle") && !R("psp")) category = "Settle";
+        if (C("posting") && R("tf")) category = "Posting TF TD";
+        if (C("misc") && R("tf")) category = "MISC CIMB TF TD";
+        if (C("cfd") && R("tf")) category = "CFD TF TD";
+        if (C("rebate") && R("tf")) category = "Rebate TF TD";
+        if (C("pending") && R("tf")) category = "Pending TF TD";
+        if (R("fee") || R("interest") || R("surcharge")) category = "Bank Fee";
+        if (R("psp settle")) category = "PSP Settle In";
+        if (!new[] { "settle", "posting", "misc", "cfd", "pending", "rebate" }.Any(C)
+            && R("tf") && !R("wholesale") && !R("insto")) category = "Bank TF";
+        if (R("dep") && !R("psp") && !R("wholesale") && !R("insto")) category = "BW Dep";
+        if (R("with") && !R("wholesale") && !R("insto")) category = "BW WD";
+        return category;
     }
 
 

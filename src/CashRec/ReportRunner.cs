@@ -10,17 +10,23 @@ public static class ReportRunner
         .OrderBy(type => type.Name).Select(type => (IReportAdapter)Activator.CreateInstance(type)!);
 
     public static RunResult Run(string workspace, DateTime date, Action<string>? progress = null)
+        => RunDetailed(workspace, date, progress).Result;
+
+    internal static DailyRunArtifacts RunDetailed(string workspace, DateTime date, Action<string>? progress = null)
     {
         var check = WorkspaceInputs.Inspect(workspace, date);
         var diagnostics = check.Diagnostics;
         var diagnosticPath = DiagnosticPath(workspace, date);
-        if (!check.CanRun) return Finish(null, diagnosticPath, false, diagnostics);
+        RunContext? context = null;
+        var tables = new List<ReportTable>();
+        DailyRunArtifacts Complete(string? output, bool complete) =>
+            new(Finish(output, diagnosticPath, complete, diagnostics), context, tables);
+        if (!check.CanRun) return Complete(null, false);
         try
         {
             progress?.Invoke("读取每日汇率");
-            var context = new RunContext(date, check.DateDirectory, check.Inputs, check.MappingPath,
+            context = new RunContext(date, check.DateDirectory, check.Inputs, check.MappingPath,
                 DailyRates.Load(check.Inputs["Rates"], date), progress);
-            var tables = new List<ReportTable>();
             var adapters = Adapters().ToList();
             foreach (var adapter in adapters)
             {
@@ -41,8 +47,8 @@ public static class ReportRunner
             var ready = WorkbookWriter.SheetNames.All(name => tables.Any(t => t.Name == name)) && finalizers.Count > 0
                 && !diagnostics.Any(d => d.Severity == "Incomplete");
             if (!ready) diagnostics.Add(new("Warning", "基础报表", "本次基础报表尚不完整；请查看已生成的表与诊断记录"));
-            if (diagnostics.Any(d => d.Severity == "Error")) return Finish(null, diagnosticPath, false, diagnostics);
-            if (tables.Count == 0) return Finish(null, diagnosticPath, false, diagnostics);
+            if (diagnostics.Any(d => d.Severity == "Error")) return Complete(null, false);
+            if (tables.Count == 0) return Complete(null, false);
             var output = Path.Combine(check.DateDirectory, "CashRec_Base.xlsx");
             var temporary = Path.Combine(check.DateDirectory, ".CashRec-" + Guid.NewGuid().ToString("N") + ".xlsx");
             try
@@ -58,12 +64,12 @@ public static class ReportRunner
                 File.Move(temporary, output, true);
             }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
-            return Finish(output, diagnosticPath, ready, diagnostics);
+            return Complete(output, ready);
         }
         catch (Exception error)
         {
             diagnostics.Add(new("Error", "处理阶段", error.Message));
-            return Finish(null, diagnosticPath, false, diagnostics);
+            return Complete(null, false);
         }
     }
 

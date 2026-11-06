@@ -6,7 +6,6 @@ namespace CashRec;
 public sealed class PreviousBalanceFinalizer : IReportFinalizer
 {
     static readonly string[] BalanceSheets = ["Equity", "Bank", "PSP"];
-    sealed record Snapshot(DateTime Date, string Source, Dictionary<string, Dictionary<string, decimal>> Values);
 
     public void FinalizeReport(RunContext context, IList<ReportTable> tables, List<Diagnostic> diagnostics)
     {
@@ -18,6 +17,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                 throw new InvalidDataException(table.Name + "存在重复余额业务键，不能任选一条作为上期或当前余额");
 
         var previous = FindPrevious(context, diagnostics);
+        context.PreviousBalances = previous;
         var manual = ReadManualDep(context);
         var matchedManual = new HashSet<string>();
         if (previous == null)
@@ -66,7 +66,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
             diagnostics.Add(new("Info", "上期余额", $"使用{previous.Date:yyyy.MM.dd}的同口径余额；实体重分类不作为当日资金变动"));
     }
 
-    static Snapshot? FindPrevious(RunContext context, List<Diagnostic> diagnostics)
+    static PreviousBalanceSnapshot? FindPrevious(RunContext context, List<Diagnostic> diagnostics)
     {
         var parent = Directory.GetParent(context.DateDirectory)?.FullName;
         if (parent == null) return null;
@@ -85,14 +85,16 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                     if (BalanceWorkbookReader.HasCurrentRules(path))
                     {
                         var values = new Dictionary<string, Dictionary<string, decimal>>();
+                        var tables = new Dictionary<string, List<Dictionary<string, object?>>>();
                         foreach (var name in BalanceSheets)
                         {
                             var rows = BalanceWorkbookReader.ReadRows(path, name, SnapshotColumns(name));
                             if (rows.Any(row => row.GetValueOrDefault("Date") is not DateTime rowDate || rowDate.Date != date))
                                 throw new InvalidDataException(name + "业务日期与上期目录不一致");
                             values[name] = Index(name, rows);
+                            tables[name] = rows;
                         }
-                        return new(date, path, values);
+                        return new(date, candidate.Path, path, values, tables);
                     }
                     diagnostics.Add(new("Warning", "上期余额", $"{date:yyyy.MM.dd}已有结果不具备当前实体/估值口径标记，将尝试按当前规则重算原始余额"));
                 }
@@ -108,6 +110,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                 var priorContext = new RunContext(date, candidate.Path, prepared.Inputs, context.MappingPath,
                     DailyRates.Load(prepared.Inputs["Rates"], date), context.Progress);
                 var values = new Dictionary<string, Dictionary<string, decimal>>();
+                var tables = new Dictionary<string, List<Dictionary<string, object?>>>();
                 foreach (var adapter in ReportRunner.Adapters().Where(adapter => BalanceSheets.Contains(adapter.Name)))
                 {
                     context.Progress?.Invoke($"按当前规则重算上期{date:yyyy.MM.dd} {adapter.Name}");
@@ -115,10 +118,11 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                     var error = table.Diagnostics.FirstOrDefault(d => d.Severity == "Error");
                     if (error != null) throw new InvalidDataException(error.Source + "：" + error.Message);
                     values.Add(table.Name, Index(table.Name, table.Rows));
+                    tables.Add(table.Name, table.Rows);
                 }
                 if (BalanceSheets.Any(name => !values.ContainsKey(name))) throw new InvalidDataException("重算余额模块不完整");
                 diagnostics.Add(new("Info", "上期余额", $"{date:yyyy.MM.dd}原始余额已按当前监管、来源归属及币种规则重算；不依赖旧Branch或Group划分"));
-                return new(date, candidate.Path + "（按当前规则重算）", values);
+                return new(date, candidate.Path, candidate.Path + "（按当前规则重算）", values, tables);
             }
             catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException or InvalidOperationException)
             { diagnostics.Add(new("Warning", "上期余额", $"跳过无效基准{date:yyyy.MM.dd}：{error.Message}")); }
@@ -193,7 +197,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
     static string[] SnapshotColumns(string table) => table switch
     {
         "Equity" => ["Date", "Branch", "Retail Type", "Currency", "USD Equivalent"],
-        "Bank" => ["Date", "Branch", "Source", "Account Number", "Currency", "USD Equivalent"],
+        "Bank" => ["Date", "Branch", "Source", "Account Number", "Currency", "USD Equivalent", "Account Type", "Client Type", "Settle Type", "Company"],
         "PSP" => ["Date", "Branch", "Source", "PSP", "Currency", "USD Equivalent"],
         _ => throw new InvalidDataException("不支持的余额表 " + table)
     };
