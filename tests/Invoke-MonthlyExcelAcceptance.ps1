@@ -183,7 +183,7 @@ try{
    else{Assert-Number $state.Value $initialExpected ('Initial manual '+$field)}
    $before[[string]$column]=$state
   }
-  $result.Before=$before;$result.CheckFormula=$formula
+  $result.Before=$before;$result.CheckFormula=$formula;$result.InitialCheck=$sheet.Cells.Item($row,16).Value2
   $sheet.Cells.Item($row,7).Value2=[double]-5
   $sheet.Cells.Item($row,12).Value2=[double]0
   $sheet.Cells.Item($row,13).ClearContents()|Out-Null
@@ -227,6 +227,7 @@ try{
    $columnCases+=@{Column=$column;Field=$manualFields[$column];Steps=$steps}
   }
   $result.IndependentManualColumns=$columnCases
+  $result.RestoredStandardCheck=$sheet.Cells.Item($row,16).Value2
   if($null -ne $FinalConversionValue){
    $sheet.Cells.Item($row,13).Value2=[double]$FinalConversionValue;$excel.CalculateFull()
    $finalExpected=$negativeExpected-[double]$FinalConversionValue
