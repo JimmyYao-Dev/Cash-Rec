@@ -116,6 +116,8 @@ def verify(workbook_path: Path, oracle_path: Path, selected: list[str],
             for key, expected in wanted.items():
                 actual = actual_by_key[key]
                 for field, value in expected.items():
+                    if field == "DEP Number Format":
+                        continue
                     if stage == "current" and field in BEFORE_FINAL:
                         continue
                     if field not in headers:
@@ -149,11 +151,14 @@ def verify(workbook_path: Path, oracle_path: Path, selected: list[str],
                         raise AssertionError(f"Equity {key}: expected linked formula {expected_formula}, got {pnl.value}")
                     compare(
                         actual["PNL"],
-                        number(actual["Movement"]) - number(actual["DEP"]),
+                        number(actual["Movement"]) - number(actual["DEP"] if actual["DEP"] is not None else 0),
                         f"Equity {key} cached PNL",
                     )
                     if "$" not in formulas[name].cell(row_number, headers["DEP"]).number_format:
                         raise AssertionError("DEP must use the template USD number format")
+                    manual_format = expected.get("DEP Number Format")
+                    if manual_format is not None and formulas[name].cell(row_number, headers["DEP"]).number_format != manual_format:
+                        raise AssertionError(f"Equity {key}: original manual DEP format changed")
             for forbidden in contract.get("forbidden_columns", []):
                 if normalized_header(forbidden) in {normalized_header(h) for h in headers}:
                     raise AssertionError(f"{name}: flow table contains stock field {forbidden}")
