@@ -38,4 +38,8 @@ Monthly PSP Pending needs `BANK BD.xlsx` from both the selected date and the val
 
 Retail BANK BD classification uses Comment keywords without requiring `tf` in Rational, while retaining the established fee/PSP conflict rules. If historical dates need recalculation under the updated classification, the tool lists them. Rerun those dates using their own prepared inputs; existing dated rows, manual values and formats are preserved.
 
+Same-date reruns replace automatic values and formulas while matching DEP by business date, Branch, IB/Standard and Currency. Monthly To LP, fees and Time Diff follow their sheet and business date. Saved blank, zero and negative entries retain their formats even after row or tab reordering. New keys start with the default; disappeared manual keys are listed in a dated `UnmatchedManual_*.csv` beside the base workbook, with a link in the task diagnostic.
+
+Before replacing results, the tool keeps exact-file backups in the daily and monthly `backups` folders. The daily workbook, monthly workbook and related local trace files are prepared together. A failed task publishes no new pair; its diagnostic identifies retained results or any recovery files. Close output workbooks in Excel before rerunning. Successful generation still requires manual reconciliation.
+
 Upgrading or uninstalling the program preserves the independent business workspace. Back up important results before changing files.

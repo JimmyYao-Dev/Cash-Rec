@@ -18,11 +18,12 @@ public static class WorkbookWriter
         if (tables.Any(table => table.Name == "Equity" && table.Columns.Contains("Previous Date")))
             workbook.CustomProperties.Add("CashRecManualDEP", "1");
         var cachedValues = new Dictionary<string, Dictionary<string, decimal>>();
+        var styles = new List<ManualStyleMapping>();
         foreach (var name in SheetNames)
         {
             var sheet = workbook.AddWorksheet(name);
             var formulas = new Dictionary<string, decimal>();
-            cachedValues["xl/worksheets/sheet" + workbook.Worksheets.Count + ".xml"] = formulas;
+            cachedValues[name] = formulas;
             var data = tables.Where(t => t.Name == name).ToList();
             var columns = data.SelectMany(t => t.Columns).Distinct().ToList();
             for (var c = 0; c < columns.Count; c++) sheet.Cell(1, c + 1).Value = columns[c];
@@ -35,6 +36,10 @@ public static class WorkbookWriter
                     var cell = sheet.Cell(rowNumber, c + 1);
                     switch (value)
                     {
+                        case PreservedManualCell manual:
+                            if (manual.Value != null) cell.Value = (double)manual.Value.Value;
+                            styles.Add(new(manual.SourcePath, manual.SourceSheet, manual.SourceAddress, name, CellAddress(c + 1, rowNumber)));
+                            break;
                         case FormulaCell formula:
                             cell.FormulaA1 = formula.Formula;
                             formulas[CellAddress(c + 1, rowNumber)] = formula.CalculatedValue;
@@ -64,6 +69,7 @@ public static class WorkbookWriter
         }
         workbook.SaveAs(path, new ClosedXML.Excel.SaveOptions { EvaluateFormulasBeforeSaving = false });
         PersistFormulaValues(path, cachedValues);
+        ManualStyleTransfer.Apply(path, styles);
     }
 
     internal static string CellAddress(int column, int row)
@@ -77,8 +83,9 @@ public static class WorkbookWriter
     {
         using var archive = ZipFile.Open(path, ZipArchiveMode.Update);
         XNamespace ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-        foreach (var (entryPath, values) in cachedValues.Where(pair => pair.Value.Count > 0))
+        foreach (var (sheetName, values) in cachedValues.Where(pair => pair.Value.Count > 0))
         {
+            var entryPath = WorkbookPackage.WorksheetPath(archive, sheetName);
             var entry = archive.GetEntry(entryPath) ?? throw new InvalidDataException("缺少输出工作表：" + entryPath);
             XDocument xml;
             using (var stream = entry.Open()) xml = XDocument.Load(stream);

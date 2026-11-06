@@ -11,12 +11,6 @@ public static class MonthlySettlementCalculator
     public static void Apply(MonthlyReport report, IEnumerable<ReportTable> tables,
         IReadOnlyDictionary<string, decimal?>? manual = null, Action<string>? progress = null)
     {
-        var row = report.Rows["Break down"];
-        var tma = MonthlyBalanceCalculator.Number(report.Rows["TMA"].GetValueOrDefault("SETTLE PNL"), "TMA SETTLE PNL");
-        var tmg = MonthlyBalanceCalculator.Number(report.Rows["TMG"].GetValueOrDefault("SETTLE PNL"), "TMG SETTLE PNL");
-        row["TMA SETTLE PNL"] = new MonthlyFormula("[TMA:SETTLE PNL]", tma);
-        row["TMG SETTLE PNL"] = new MonthlyFormula("[TMG:SETTLE PNL]", tmg);
-        row["To Settle WS"] = 0m;
         var commission = 0m;
         var count = 0;
         var processed = 0;
@@ -30,6 +24,24 @@ public static class MonthlySettlementCalculator
             commission += MonthlyBalanceCalculator.Number(transaction.GetValueOrDefault("USD Equivalent"), "佣金 USD Equivalent");
             count++;
         }
+        ApplyKnownCommission(report, commission, manual);
+        report.Provenance.Add(new
+        {
+            Kind = "Settlement and Check", Date = report.Date,
+            Tma = "Current report TMA SETTLE PNL, no TMNZ", Tmg = "Current report TMG SETTLE PNL",
+            CommissionRecords = count, Commission = "Same report date, TMA/TMG, exact normalized PSP CN Commission or PSP Commission; all Sources; signed USD Equivalent",
+            Check = "F-G-H-I-J-K-L-M-N, preserving manual blanks/zero/negative values; no ROUND or tolerance",
+        });
+    }
+
+    internal static void ApplyKnownCommission(MonthlyReport report, decimal commission, IReadOnlyDictionary<string, decimal?>? manual)
+    {
+        var row = report.Rows["Break down"];
+        var tma = MonthlyBalanceCalculator.Number(report.Rows["TMA"].GetValueOrDefault("SETTLE PNL"), "TMA SETTLE PNL");
+        var tmg = MonthlyBalanceCalculator.Number(report.Rows["TMG"].GetValueOrDefault("SETTLE PNL"), "TMG SETTLE PNL");
+        row["TMA SETTLE PNL"] = new MonthlyFormula("[TMA:SETTLE PNL]", tma);
+        row["TMG SETTLE PNL"] = new MonthlyFormula("[TMG:SETTLE PNL]", tmg);
+        row["To Settle WS"] = 0m;
         row["Commission"] = commission;
         if (!row.TryGetValue("Diff", out var difference) || difference == null)
         {
@@ -42,13 +54,6 @@ public static class MonthlySettlementCalculator
             - ManualFields.Sum(field => manual?.GetValueOrDefault(field) ?? 0m);
         row["Check"] = new MonthlyFormula("[Diff]-[To LP]-[TMA SETTLE PNL]-[TMG SETTLE PNL]-[To Settle WS]-[Commission]-[Bank Fee]-[Bank fee-conversion]-[Time Diff]", result);
         report.CheckComplete = true;
-        report.Provenance.Add(new
-        {
-            Kind = "Settlement and Check", Date = report.Date,
-            Tma = "Current report TMA SETTLE PNL, no TMNZ", Tmg = "Current report TMG SETTLE PNL",
-            CommissionRecords = count, Commission = "Same report date, TMA/TMG, exact normalized PSP CN Commission or PSP Commission; all Sources; signed USD Equivalent",
-            Check = "F-G-H-I-J-K-L-M-N, preserving manual blanks/zero/negative values; no ROUND or tolerance",
-        });
     }
 
     static string Text(IReadOnlyDictionary<string, object?> row, string field) =>

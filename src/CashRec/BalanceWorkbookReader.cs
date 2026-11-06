@@ -35,7 +35,10 @@ public static class BalanceWorkbookReader
     public static List<Dictionary<string, object?>> ReadRows(string path, string sheetName, IReadOnlyCollection<string> selectedColumns) =>
         ReadPackage(path, archive => ReadRowsCore(archive, path, sheetName, selectedColumns));
 
-    static List<Dictionary<string, object?>> ReadRowsCore(ZipArchive archive, string path, string sheetName, IReadOnlyCollection<string>? selectedColumns)
+    internal static List<Dictionary<string, object?>> ReadRowsWithAddresses(string path, string sheetName, IReadOnlyCollection<string> selectedColumns) =>
+        ReadPackage(path, archive => ReadRowsCore(archive, path, sheetName, selectedColumns, true));
+
+    static List<Dictionary<string, object?>> ReadRowsCore(ZipArchive archive, string path, string sheetName, IReadOnlyCollection<string>? selectedColumns, bool withAddresses = false)
     {
         var workbook = ReadXml(archive, "xl/workbook.xml");
         var sheet = workbook.Descendants().SingleOrDefault(e => e.Name.LocalName == "sheet" && (string?)e.Attribute("name") == sheetName)
@@ -82,15 +85,15 @@ public static class BalanceWorkbookReader
         }
         if (headers == null) throw new InvalidDataException($"{sheetName}：没有可识别的表头行");
         if (selectedColumns != null) headers = ProjectHeaders(headers, selectedColumns, sheetName);
-        var dataRows = sheetRows.Skip(headerIndex + 1).Select(IndexedCells).ToList();
-        var dataCells = dataRows.SelectMany(row => row.Where(pair => selectedColumns == null || headers.ContainsKey(pair.Key)).Select(pair => pair.Value));
+        var dataRows = sheetRows.Skip(headerIndex + 1).Select((row, index) => (Cells: IndexedCells(row), Number: (int?)row.Attribute("r") ?? headerIndex + index + 2)).ToList();
+        var dataCells = dataRows.SelectMany(row => row.Cells.Where(pair => selectedColumns == null || headers.ContainsKey(pair.Key)).Select(pair => pair.Value));
         var sharedStrings = ReadSharedStrings(archive, dataCells);
         for (var index = 0; index < dataRows.Count; index++)
         {
-            var recordNumber = headerIndex + index + 2;
+            var recordNumber = dataRows[index].Number;
             var result = headers.Values.ToDictionary(header => header, _ => (object?)null, StringComparer.OrdinalIgnoreCase);
             var hasValue = false;
-            foreach (var (column, cell) in dataRows[index])
+            foreach (var (column, cell) in dataRows[index].Cells)
             {
                 if (selectedColumns != null && !headers.ContainsKey(column)) continue;
                 var header = headers.GetValueOrDefault(column) ?? "";
@@ -101,7 +104,12 @@ public static class BalanceWorkbookReader
                 result[header] = value;
                 hasValue = true;
             }
-            if (hasValue) rows.Add(result);
+            if (hasValue)
+            {
+                if (withAddresses)
+                    foreach (var (column, header) in headers) result["__Cell:" + header] = WorkbookWriter.CellAddress(column, recordNumber);
+                rows.Add(result);
+            }
         }
         return rows;
     }

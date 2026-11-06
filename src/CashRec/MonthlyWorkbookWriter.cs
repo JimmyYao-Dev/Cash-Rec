@@ -13,48 +13,12 @@ internal static class MonthlyWorkbookWriter
     {
         using var book = existingPath == null ? NewWorkbook() : new XLWorkbook(existingPath);
         Validate(book);
+        for (var index = 0; index < MonthlyLayout.Sheets.Length; index++) book.Worksheet(MonthlyLayout.Sheets[index]).Position = index + 1;
         SetProperty(book, "CashRecMonthlyStage", MonthlyStage.Current);
         SetProperty(book, "CashRecMonthlyStageComplete", report.StageComplete ? "1" : "0");
         SetProperty(book, "CashRecMonthlyStageDate", report.Date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture));
         SetProperty(book, "CashRecVersion", AppVersion.Current);
-        var rows = MonthlyLayout.Sheets.ToDictionary(name => name, name => FindOrAddDate(book.Worksheet(name), report.Date));
-        var caches = new Dictionary<string, Dictionary<string, decimal>>();
-        foreach (var sheet in book.Worksheets)
-        {
-            var cached = new Dictionary<string, decimal>();
-            foreach (var cell in sheet.CellsUsed().Where(cell => cell.HasFormula && cell.CachedValue.Type == XLDataType.Number))
-                cached[Address(cell)] = ExcelNumbers.Read(cell, sheet.Name + "!" + cell.Address);
-            caches["xl/worksheets/sheet" + sheet.Position + ".xml"] = cached;
-        }
-        foreach (var name in MonthlyLayout.Sheets)
-        {
-            var sheet = book.Worksheet(name);
-            var columns = name == "Break down" ? MonthlyLayout.BreakdownColumns : MonthlyLayout.EntityColumns;
-            var number = rows[name];
-            var values = report.Rows[name];
-            for (var column = 0; column < columns.Length; column++)
-            {
-                var field = columns[column].Field;
-                var cell = sheet.Cell(number, column + 1);
-                // A missing previous value must also remove a previously saved DIFF.
-                if (name != "Break down" ? IsAutomaticField(field) : MonthlyBreakdownCalculator.AutomaticFields.Contains(field) || MonthlySettlementCalculator.AutomaticFields.Contains(field))
-                {
-                    cell.Clear(XLClearOptions.Contents);
-                    caches["xl/worksheets/sheet" + sheet.Position + ".xml"].Remove(Address(cell));
-                }
-                if (!values.TryGetValue(field, out var value) || value == null) continue;
-                switch (value)
-                {
-                    case DateTime date: cell.Value = date; cell.Style.DateFormat.Format = "mm-dd-yy"; break;
-                    case decimal amount: cell.Value = (double)amount; break;
-                    case MonthlyFormula formula:
-                        cell.FormulaA1 = Resolve(formula.Expression, name, rows);
-                        caches["xl/worksheets/sheet" + sheet.Position + ".xml"][Address(cell)] = formula.CalculatedValue;
-                        break;
-                    default: throw new InvalidDataException("不支持的月度字段值：" + field);
-                }
-            }
-        }
+        var caches = MonthlyHistory.Rewrite(book, report);
         MarkClassificationCoverage(book, report);
         book.SaveAs(temporaryPath, new SaveOptions { EvaluateFormulasBeforeSaving = false });
         WorkbookWriter.PersistFormulaValues(temporaryPath, caches);
@@ -80,7 +44,7 @@ internal static class MonthlyWorkbookWriter
         return result;
     }
 
-    static bool IsAutomaticField(string field) => field == "SETTLE PNL"
+    internal static bool IsAutomaticField(string field) => field == "SETTLE PNL"
         || field is "Insto Pending DIFF" or "Retail Pending DIFF" or "Wholesale Pending DIFF"
         || MonthlyFlowCalculator.Fields.Contains(field)
         || MonthlyBalanceCalculator.BalanceFields.Contains(field)
@@ -103,16 +67,6 @@ internal static class MonthlyWorkbookWriter
             report.Diagnostics.Add(new("Warning", "历史交易分类",
                 $"{stale.Count} 个历史日期尚未按当前 Comment 关键词规则重算（{string.Join("、", stale.Take(5).Select(date => date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture)))}）；已保留原行及人工值，月度分类标记为 Mixed，请逐日重跑，不将旧自动值作为新分类结果"));
     }
-
-    static string Resolve(string expression, string sheet, IReadOnlyDictionary<string, int> rows) =>
-        Regex.Replace(expression, @"\[([^\]]+)\]", match =>
-        {
-            var parts = match.Groups[1].Value.Split(':', 2);
-            var target = parts.Length == 2 ? parts[0] : sheet;
-            var field = parts[^1];
-            var address = MonthlyLayout.Address(target, field, rows[target]);
-            return target == sheet ? address : "'" + target.Replace("'", "''") + "'!" + address;
-        });
 
     static XLWorkbook NewWorkbook()
     {
@@ -156,8 +110,8 @@ internal static class MonthlyWorkbookWriter
             || book.CustomProperties.SingleOrDefault(property => property.Name == "CashRecRules")?.Value.ToString() != ReportPolicy.EntityRules
             || book.CustomProperties.SingleOrDefault(property => property.Name == "CashRecValuation")?.Value.ToString() != ReportPolicy.Valuation)
             throw new InvalidDataException("已有月度工作簿口径或布局无法确认，已保留原文件；请提供当前版本月度文件");
-        if (!book.Worksheets.Select(sheet => sheet.Name).SequenceEqual(MonthlyLayout.Sheets))
-            throw new InvalidDataException("已有月度工作簿的四个工作表不完整或顺序不符");
+        if (book.Worksheets.Count != MonthlyLayout.Sheets.Length || !book.Worksheets.Select(sheet => sheet.Name).ToHashSet(StringComparer.Ordinal).SetEquals(MonthlyLayout.Sheets))
+            throw new InvalidDataException("已有月度工作簿的四个工作表不完整");
         foreach (var name in MonthlyLayout.Sheets)
         {
             var sheet = book.Worksheet(name);
@@ -168,23 +122,7 @@ internal static class MonthlyWorkbookWriter
         }
     }
 
-    static int FindOrAddDate(IXLWorksheet sheet, DateTime date)
-    {
-        var headerRows = MonthlyLayout.HeaderRows(sheet.Name);
-        var matches = sheet.RowsUsed().Where(row => row.RowNumber() > headerRows && CellDate(row.Cell(1)) == date).ToList();
-        if (matches.Count > 1) throw new InvalidDataException(sheet.Name + " 同一业务日期重复，不能任选一行覆盖");
-        if (matches.Count == 1) return matches[0].RowNumber();
-        var last = sheet.RowsUsed().Where(row => row.RowNumber() > headerRows && CellDate(row.Cell(1)) != null)
-            .Select(row => row.RowNumber()).DefaultIfEmpty(headerRows).Max();
-        var next = last + 1;
-        if (last > headerRows) sheet.Row(next).Style = sheet.Row(last).Style;
-        if (last > headerRows)
-            foreach (var cell in sheet.Row(last).CellsUsed(XLCellsUsedOptions.NormalFormats))
-                sheet.Cell(next, cell.Address.ColumnNumber).Style = cell.Style;
-        return next;
-    }
-
-    static DateTime? CellDate(IXLCell cell)
+    internal static DateTime? CellDate(IXLCell cell)
     {
         if (cell.HasFormula) throw new InvalidDataException(cell.Worksheet.Name + " 日期不能由未验证公式推算");
         if (cell.Value.Type == XLDataType.Blank) return null;
