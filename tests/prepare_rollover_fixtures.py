@@ -19,7 +19,7 @@ import generate_monthly_fixtures as monthly
 from excel_style_signature import cell_style_signature
 
 STOCKS = {"2026-10-31": (100, 200), "2026-11-02": (130, 220), "2026-11-03": (135, 230)}
-PRIOR = {"2026-10-31": "2026-10-25", "2026-11-02": "2026-10-31", "2026-11-03": "2026-11-02"}
+PRIOR = {"2026-10-31": "2026-10-25", "2026-11-01": "2026-10-31", "2026-11-02": "2026-10-31", "2026-11-03": "2026-11-02"}
 
 
 def load(path: Path) -> dict:
@@ -30,10 +30,11 @@ def write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def initialize(workspace: Path) -> dict:
+def initialize(workspace: Path, partial: bool = False) -> dict:
     monthly.generate(workspace, "good")
     base = load(workspace / "monthly_expected_comment_policy.json")
-    for date, (tma, tmg) in STOCKS.items():
+    stocks = {**STOCKS, **({"2026-11-01": (120, 210)} if partial else {})}
+    for date, (tma, tmg) in stocks.items():
         day = datetime.fromisoformat(date); needed = workspace / day.strftime("%Y.%m.%d") / "Needed files"
         shutil.copytree(workspace / "2026.10.25/Needed files", needed, dirs_exist_ok=True)
         path = needed / "Rate/VFSC Rate.xlsx"; book = load_workbook(path)
@@ -58,7 +59,7 @@ def initialize(workspace: Path) -> dict:
         write(workspace / ("rollover_"+date+"_daily_expected.json"), daily)
         report = copy.deepcopy(base); report.update(business_date=date, previous_date=PRIOR[date])
         report["previous_balances"] = copy.deepcopy(base["balances"])
-        previous = STOCKS.get(PRIOR[date], (100, 200))
+        previous = stocks.get(PRIOR[date], (100, 200))
         for values, amounts in [(report["balances"], (tma, tmg)), (report["previous_balances"], previous)]:
             values["TMA"]["PSP Pending"] = amounts[0]; values["TMG"]["PSP Pending"] = amounts[1]
             values["Total"]["PSP Pending"] = sum(amounts)
@@ -69,11 +70,21 @@ def initialize(workspace: Path) -> dict:
         report["breakdown"].update({"Client Bank Move": change, "Diff": diff, "Check": diff-385+7+25})
         write(workspace / ("rollover_"+date+"_monthly_expected.json"), report)
     marker = load(workspace / monthly.MARKER)
-    marker["dates"] += [day.replace("-", ".") for day in STOCKS]
+    marker["dates"] += [day.replace("-", ".") for day in stocks]
     marker["lifecycle_fixture"] = "month-end-2026-10-to-11"
+    if partial:
+        held = workspace/".prepared-prior"; held.mkdir(exist_ok=True)
+        for day in marker["dates"]:
+            if day >= "2026.11.01": continue
+            source, destination = workspace/day, held/day
+            if workspace not in source.resolve().parents or workspace not in destination.resolve().parents:
+                raise ValueError("Synthetic prior move escaped its workspace.")
+            source.rename(destination)
+        marker["prior_inputs_temporarily_held"] = True
     write(workspace / monthly.MARKER, marker)
     result = {"synthetic_only": True, "preparation_only": True, "business_acceptance_executed": False,
-              "dates_added": list(STOCKS), "monthly_checks": {"2026-10-31": -595, "2026-11-02": -545, "2026-11-03": -580}}
+              "dates_added": list(stocks), "partial_initialization": partial,
+              "monthly_checks": {"2026-10-31": -595, "2026-11-02": -545, "2026-11-03": -580, **({"2026-11-01": -565} if partial else {})}}
     write(workspace / "rollover_fixture_contract.json", result)
     return result
 
@@ -144,11 +155,20 @@ def seed_source(workspace: Path, edited: Path, scenario: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
-    parser.add_argument("--phase", choices=["init", "seed-source"], required=True)
+    parser.add_argument("--phase", choices=["init", "init-partial", "restore-prior", "seed-source"], required=True)
     parser.add_argument("--edited-workbook", type=Path)
     parser.add_argument("--scenario", choices=["good", "missing-month", "empty-baseline", "inconsistent-baseline"], default="good")
     args = parser.parse_args(); workspace = args.workspace.resolve()
-    if args.phase == "init": result = initialize(workspace)
+    if args.phase in {"init", "init-partial"}: result = initialize(workspace, args.phase == "init-partial")
+    elif args.phase == "restore-prior":
+        if not load(workspace/monthly.MARKER).get("synthetic_only"): raise ValueError("Only marked synthetic prior inputs may be restored.")
+        dates = []
+        for source in (workspace/".prepared-prior").iterdir():
+            destination = workspace/source.name
+            if workspace not in source.resolve().parents or workspace not in destination.resolve().parents:
+                raise ValueError("Synthetic prior restore escaped its workspace.")
+            source.rename(destination); dates.append(source.name)
+        result = {"synthetic_only": True, "preparation_only": True, "business_acceptance_executed": False, "restored_dates": sorted(dates)}
     else:
         if args.edited_workbook is None: parser.error("seed-source requires --edited-workbook")
         result = seed_source(workspace, args.edited_workbook.resolve(), args.scenario)
