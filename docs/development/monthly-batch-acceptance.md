@@ -9,8 +9,8 @@ Scope: Issues #9–#15. Parent #1 remains open. Each business case starts from t
 | #11 Breakdown and manual area | Installed GUI/Excel gate passed | App source `2294a62` |
 | #12 Settlement, commission and Check | Installed GUI/Excel gate passed | App source `7e913c5` |
 | #13 Rerun preservation and backups | Installed GUI/Excel gate passed | App source `16bfd9d` |
-| #14 Monthly append and rollover | Implementation in progress | Not yet accepted |
-| #15 Date range and missing dates | Pending dependency | Not yet accepted |
+| #14 Monthly append and rollover | Installed GUI/Excel gate passed after marker fix | App source `aa42e4d` |
+| #15 Date range and missing dates | Implementation in progress | Not yet accepted |
 
 ## Issue #9
 
@@ -79,3 +79,13 @@ The task prepares daily, monthly and associated outputs before replacement. A gu
 Actual Excel then verifies DEP35→PNL−7 and Check −295.5. A fixture-preparation rejection and two setup-tool mistakes are recorded separately from validated business cases. Extra screenshot reruns are not added to the business case count. Existing user Excel was untouched.
 
 When a valid prior cache lacks a current stable key, the engine may rebuild that same date from all required raw balance inputs. Only explicitly present numbers, including explicit zero, fill the gap. Missing raw files or a still-missing key retain the missing-basis state; no older date is mixed in and no zero is invented. This was covered by focused developer checks and the installed new-key rerun.
+
+## Issue #14
+
+Accepted app source `aa42e4d25c13d8f4b6603d3b222c5e499e9813b4`; installer SHA256 `22209AB115867EDB56A890D1663FB97A2B38A14FF7FAF5EC6B08A56B5F951713`, 36,999,136 bytes. Ten fresh installed GUI runs passed. Five owned Excel operations include manual preparation and a prepared-source control; they are not five distinct application business cases. Actual output workbooks from normal rollover and late recovery both opened normally and passed manual formula editing. Evidence: `.scratch/monthly-implementation/acceptance/t14-fix1/source-aa42e4d-summary.json`.
+
+The four sheets retain only the consistent last valid October date in the new November copy. Trailing totals, notes and style-only rows are omitted. November 2/3 append without repeated initialization; the previous-month SHA remains unchanged. Independent readers check exact dates, daily/monthly amounts, formula caches, baseline manual values/formats and provenance. Actual Excel changes the new November row Check from −580 to −572.5.
+
+Missing, empty and inconsistent prior baselines fail honestly. An initial no-prior result cannot bypass its pending cross-month initialization by running a later same-month day. Once the prior month is supplied, recovery injects its closing row while preserving existing new-month dates and manual entries. Both baseline and selected-date classification markers remain current, without a false Mixed warning.
+
+The original `a197711` candidate is retained as held evidence. Its genuine late-carry classification-marker omission was fixed. A separate earlier Excel-open failure came from the fixture tool dropping namespace declarations referenced by `mc:Ignorable` while rewriting XML; the prepared input itself was invalid. The tool now preserves those declarations, a real Excel control proves the prepared source opens, and the complete acceptance was rerun on fresh inputs. No app compatibility workaround or repaired-open pass claim was used. Issue #15 started only after this corrected gate passed.
