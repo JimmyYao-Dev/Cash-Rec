@@ -25,7 +25,7 @@ static void Run(string fixture, bool baselineOnly)
     var prior = Path.Combine(workspace, "2026.10.22", "Needed files");
     var result = ReportTaskRunner.Run(workspace, date);
     Assert(result.MonthlyStageComplete && result.MonthlyOutput != null && !result.Complete,
-        "Balances stage must complete without claiming downstream stages: " + string.Join(";", result.Diagnostics.Select(d => d.Message)));
+        "Monthly stage must complete without claiming downstream stages: " + string.Join(";", result.Diagnostics.Select(d => d.Message)));
     using (var book = new XLWorkbook(result.MonthlyOutput!))
     {
         Assert(book.Worksheets.Select(sheet => sheet.Name).SequenceEqual(new[] { "TMA", "TMG", "Total", "Break down" }), "Exactly four monthly sheets");
@@ -38,9 +38,12 @@ static void Run(string fixture, bool baselineOnly)
         {
             var sheet = book.Worksheet(name); var row = DateRow(sheet, date);
             foreach (var column in new[] { "Q", "S", "U" }) Assert(sheet.Cell(column + row).IsEmpty(), "Removed Pending DIFF placeholders stay empty");
-            for (var column = 2; column <= 6; column++) Assert(sheet.Cell(row, column).IsEmpty(), "#9 must not fabricate unimplemented flows");
             Assert(sheet.Cell("N2").GetString() == "SETTLE PNL", "SETTLE PNL follows column deletion to N");
         }
+        Money(book, "TMA", date, "B", 100); Money(book, "TMA", date, "C", -30); Money(book, "TMA", date, "D", 70);
+        Money(book, "TMA", date, "E", 100); Money(book, "TMA", date, "F", -8);
+        Money(book, "TMG", date, "B", 100); Money(book, "TMG", date, "C", -20); Money(book, "TMG", date, "D", 80);
+        Money(book, "Total", date, "D", 150); Money(book, "Total", date, "E", 100); Money(book, "Total", date, "F", -8);
         Assert(book.Worksheet("Total").Cell("N" + DateRow(book.Worksheet("Total"), date)).HasFormula, "Total is a live two-entity field formula");
         var breakdown = book.Worksheet("Break down");
         for (var column = 2; column <= 16; column++) Assert(breakdown.Cell(2, column).IsEmpty(), "#9 Breakdown values remain genuinely absent");
@@ -48,7 +51,7 @@ static void Run(string fixture, bool baselineOnly)
     }
     using (var json = JsonDocument.Parse(File.ReadAllText(result.DiagnosticPath)))
     {
-        Assert(json.RootElement.GetProperty("MonthlyStage").GetString() == "Balances"
+        Assert(json.RootElement.GetProperty("MonthlyStage").GetString() == "Flows"
             && json.RootElement.GetProperty("MonthlyStageComplete").GetBoolean()
             && !json.RootElement.GetProperty("Complete").GetBoolean(), "Task diagnostic distinguishes complete stage from incomplete full monthly task");
     }

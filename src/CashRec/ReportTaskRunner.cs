@@ -10,7 +10,7 @@ public static class ReportTaskRunner
         var daily = ReportRunner.RunDetailed(workspace, date, progress);
         var monthly = MonthlyReportRunner.Run(daily);
         var diagnostics = daily.Result.Diagnostics.Concat(monthly.Diagnostics).ToList();
-        diagnostics.Add(new("Pending", "月度阶段", "客户净额、Break down 差额、结算佣金及 Check 尚未生成；本次结果不是完整月度核对"));
+        diagnostics.Add(new("Pending", "月度阶段", "Break down 差额、结算佣金及 Check 尚未生成；本次结果不是完整月度核对"));
         var directory = Path.GetDirectoryName(daily.Result.DiagnosticPath)!;
         var path = Path.Combine(directory, date.ToString("yyyy.MM.dd") + "-task-" + DateTime.Now.ToString("HHmmssfff") + ".json");
         var result = new ReportTaskResult(daily.Result.OutputPath, monthly.OutputPath, path,
