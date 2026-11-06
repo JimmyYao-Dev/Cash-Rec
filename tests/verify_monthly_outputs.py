@@ -83,6 +83,9 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
         names_match = (set(values.sheetnames) == set(oracle["exact_sheets"]) and len(values.sheetnames) == len(oracle["exact_sheets"])) if oracle.get("allow_sheet_reorder") else values.sheetnames == oracle["exact_sheets"]
         if not names_match:
             raise AssertionError("Monthly workbook must contain exactly TMA/TMG/Total/Break down.")
+        if oracle.get("expected_global_classification"):
+            properties = {prop.name: prop.value for prop in values.custom_doc_props}
+            compare(properties.get("CashRecClassification"), oracle["expected_global_classification"], "Expected full monthly classification coverage")
         target = oracle["business_date"]
         checks = []
         entity_values = {}

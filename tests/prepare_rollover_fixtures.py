@@ -7,10 +7,12 @@ import hashlib
 import io
 import json
 import posixpath
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from xml.sax.saxutils import escape
 from zipfile import ZipFile
 
 from openpyxl import load_workbook
@@ -20,6 +22,7 @@ from excel_style_signature import cell_style_signature
 
 STOCKS = {"2026-10-31": (100, 200), "2026-11-02": (130, 220), "2026-11-03": (135, 230)}
 PRIOR = {"2026-10-31": "2026-10-25", "2026-11-01": "2026-10-31", "2026-11-02": "2026-10-31", "2026-11-03": "2026-11-02"}
+CLASSIFICATION = "BANKBD-Retail-CommentKeywords-2026-11-06"
 
 
 def load(path: Path) -> dict:
@@ -28,6 +31,20 @@ def load(path: Path) -> dict:
 
 def write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def validate_compatibility_prefixes(data: bytes) -> None:
+    pending, scopes = [], [{}]
+    compatibility = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+    for event, node in ET.iterparse(io.BytesIO(data), events=("start-ns", "start", "end")):
+        if event == "start-ns": pending.append(node)
+        elif event == "start":
+            scope = {**scopes[-1], **dict(pending)}; pending.clear(); scopes.append(scope)
+            names = node.attrib.get("{"+compatibility+"}Ignorable", "").split()
+            if node.tag == "{"+compatibility+"}Choice": names += node.attrib.get("Requires", "").split()
+            if any(name not in scope for name in names):
+                raise ValueError("Synthetic XML preparation lost a compatibility namespace prefix declaration.")
+        else: scopes.pop()
 
 
 def initialize(workspace: Path, partial: bool = False) -> dict:
@@ -58,6 +75,7 @@ def initialize(workspace: Path, partial: bool = False) -> dict:
         daily["manual_formula_case"]["expected_after_excel_recalculation"] = {"Movement": 0, "PNL": -30}
         write(workspace / ("rollover_"+date+"_daily_expected.json"), daily)
         report = copy.deepcopy(base); report.update(business_date=date, previous_date=PRIOR[date])
+        report["expected_global_classification"] = CLASSIFICATION
         report["previous_balances"] = copy.deepcopy(base["balances"])
         previous = stocks.get(PRIOR[date], (100, 200))
         for values, amounts in [(report["balances"], (tma, tmg)), (report["previous_balances"], previous)]:
@@ -124,25 +142,30 @@ def seed_source(workspace: Path, edited: Path, scenario: str) -> dict:
                 for item in archive.infolist():
                     data = archive.read(item.filename); name = parts.get(item.filename)
                     if name in date_rows:
-                        xml = ET.fromstring(data); body = xml.find("s:sheetData", ns)
+                        # Preserve the original namespace declarations, including prefixes
+                        # used only in mc:Ignorable strings. ElementTree reserialization
+                        # silently drops those bindings and Excel rejects that package.
+                        text = data.decode("utf-8-sig")
+                        prefix = re.search(r"<((?:[A-Za-z_][\w.-]*:)?)sheetData\b", text).group(1)
                         if scenario == "empty-baseline":
                             remove = set(date_rows[name].values())
                         elif scenario == "inconsistent-baseline" and name == "Break down":
                             remove = {date_rows[name]["2026-10-31"]}
                         else: remove = set()
-                        for row in list(body):
-                            if int(row.attrib["r"]) in remove: body.remove(row)
+                        for number in remove:
+                            pattern = rf'<{re.escape(prefix)}row\b(?=[^>]*\br="{number}")[^>]*(?:/>|>.*?</{re.escape(prefix)}row>)'
+                            text, count = re.subn(pattern, "", text, count=1, flags=re.DOTALL)
+                            if count != 1: raise ValueError("Expected synthetic date row could not be removed.")
                         # Non-date trailing records and styled empty cells must not become baselines.
+                        tails = []
                         for number, label in [(80, "Grand Total"), (81, "Operator note: month-end approved")]:
-                            row = ET.SubElement(body, f"{{{uri}}}row", {"r": str(number)})
-                            cell = ET.SubElement(row, f"{{{uri}}}c", {"r": f"A{number}", "t": "inlineStr"})
-                            ET.SubElement(ET.SubElement(cell, f"{{{uri}}}is"), f"{{{uri}}}t").text = label
-                            ET.SubElement(ET.SubElement(row, f"{{{uri}}}c", {"r": f"B{number}"}), f"{{{uri}}}v").text = "999999"
-                        row = ET.SubElement(body, f"{{{uri}}}row", {"r": "100", "ht": "30", "customHeight": "1"})
-                        ET.SubElement(row, f"{{{uri}}}c", {"r": "A100", "s": "1"})
-                        dimension = xml.find("s:dimension", ns)
-                        if dimension is not None: dimension.set("ref", "A1:AB100" if name != "Break down" else "A1:P100")
-                        data = ET.tostring(xml, encoding="utf-8", xml_declaration=True)
+                            tails.append(f'<{prefix}row r="{number}"><{prefix}c r="A{number}" t="inlineStr"><{prefix}is><{prefix}t>{escape(label)}</{prefix}t></{prefix}is></{prefix}c><{prefix}c r="B{number}"><{prefix}v>999999</{prefix}v></{prefix}c></{prefix}row>')
+                        tails.append(f'<{prefix}row r="100" ht="30" customHeight="1"><{prefix}c r="A100" s="1"/></{prefix}row>')
+                        text = text.replace(f'</{prefix}sheetData>', ''.join(tails)+f'</{prefix}sheetData>', 1)
+                        dimension = "A1:AB100" if name != "Break down" else "A1:P100"
+                        text = re.sub(r'(<(?:[A-Za-z_][\w.-]*:)?dimension\b[^>]*\bref=")[^"]+(\")', lambda m:m.group(1)+dimension+m.group(2), text, count=1)
+                        data = text.encode("utf-8")
+                        validate_compatibility_prefixes(data)
                     output.writestr(item, data)
         write(workspace/"rollover_retained_baseline_expected.json", oracle)
     result = {"synthetic_only": True, "preparation_only": True, "business_acceptance_executed": False,
