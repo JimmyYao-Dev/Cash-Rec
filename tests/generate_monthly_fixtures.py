@@ -31,16 +31,16 @@ PRIORITY_CASES = [
     ("Synthetic deposit withdrawal priority", "dep with", -308, "BW WD", "TMA"),
 ]
 COMMENT_KEYWORD_CASES = [
-    ("No-tf posting instruction", "memo", 2, "Posting TF TD", "TMA"),
-    ("No-tf misc instruction", "memo", 3, "MISC CIMB TF TD", "TMA"),
-    ("No-tf cfd instruction", "memo", 5, "CFD TF TD", "TMA"),
-    ("No-tf rebate instruction", "memo", 7, "Rebate TF TD", "TMA"),
-    ("No-tf pending instruction", "memo", 11, "Pending TF TD", "TMA"),
-    ("No-tf SETTLE instruction", "memo", -9, "Settle", "TMA"),
-    ("No-tf SETTLE TMG instruction", "memo", -13, "Settle", "TMG"),
-    ("No-tf posting TMG excluded", "memo", 17, "Posting TF TD", "TMG"),
-    ("No-tf posting fee override", "fee", 19, "Bank Fee", "TMA"),
-    ("No-tf SETTLE PSP override", "psp settle", 23, "PSP Settle In", "TMA"),
+    ("Keyword posting instruction", "memo", 2, "Posting TF TD", "TMA"),
+    ("Keyword misc instruction", "memo", 3, "MISC CIMB TF TD", "TMA"),
+    ("Keyword cfd instruction", "memo", 5, "CFD TF TD", "TMA"),
+    ("Keyword rebate instruction", "memo", 7, "Rebate TF TD", "TMA"),
+    ("Keyword pending instruction", "memo", 11, "Pending TF TD", "TMA"),
+    ("Keyword SETTLE instruction", "memo", -9, "Settle", "TMA"),
+    ("Keyword SETTLE TMG instruction", "memo", -13, "Settle", "TMG"),
+    ("Keyword posting TMG excluded", "memo", 17, "Posting TF TD", "TMG"),
+    ("Keyword posting fee override", "fee", 19, "Bank Fee", "TMA"),
+    ("Keyword SETTLE PSP override", "psp settle", 23, "PSP Settle In", "TMA"),
 ]
 
 
