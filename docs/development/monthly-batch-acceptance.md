@@ -8,8 +8,8 @@ Scope: Issues #9–#15. Parent #1 remains open. Each business case starts from t
 | #10 Source-specific net flows | Passed; confirmed-policy rerun passed | Original `dbc40ab`, affected rerun `742d7c1` |
 | #11 Breakdown and manual area | Installed GUI/Excel gate passed | App source `2294a62` |
 | #12 Settlement, commission and Check | Installed GUI/Excel gate passed | App source `7e913c5` |
-| #13 Rerun preservation and backups | Implementation in progress | Not yet accepted |
-| #14 Monthly append and rollover | Pending dependency | Not yet accepted |
+| #13 Rerun preservation and backups | Installed GUI/Excel gate passed | App source `16bfd9d` |
+| #14 Monthly append and rollover | Implementation in progress | Not yet accepted |
 | #15 Date range and missing dates | Pending dependency | Not yet accepted |
 
 ## Issue #9
@@ -67,3 +67,15 @@ H/I read the selected day's TMA/TMG SETTLE PNL by field; J is numeric zero; K us
 Synthetic baseline Check is −332. Actual Excel edits G−5/L0/Mblank/N−2.5 produce −324.5; explicit zero and clearing values also recalculate correctly. Existing manual values also produce the correct exported Check cache before Excel opens. Both first and second data rows were exercised. Missing required DIFF leaves P blank. Historical appending preserves the other date's correct cached Check. Original formats and source workbook hashes were retained, and pre-existing user Excel instances were untouched.
 
 Completion now means the selected day's automatic report generation is complete. A nonzero Check does not prevent that state; it does not mean manual reconciliation, all development tickets or the parent specification are complete. Source-bound output copies and diagnostics are retained in `.scratch/monthly-implementation/acceptance/t12/source-7e913c5-summary.json` and associated case folders.
+
+## Issue #13
+
+App source `16bfd9d25f71a0d9ee7cec82d39edae4f9109d19`; installer SHA256 `59DAAEDA5E49C07B6CAB8D154128D16BA985C9F608845025D52736944293BDFD`, 36,996,068 bytes. Five validated GUI cases (three normal and two locked-output failures) and three types of owned Excel business checks passed. Source-bound reports and original backups are retained under `.scratch/monthly-implementation/acceptance/t13/source-16bfd9d-summary.json`.
+
+Actual Excel seeded DEP 30/0/−4/blank/7, complete custom cell formatting and different monthly values by date. Rows and tabs were reordered, automatic inputs updated, an Equity key added and removed and a PSP mapping supplemented. Before opening Excel again, independent readers confirmed new synthetic totals Equity260/Bank1440/TransactionExchange2662, correct current Check −295.5, retained historical Check −476, key-based values and full font/fill/border/alignment/protection/number formats. The new Equity key starts at numeric zero; the removed key's value 7 is retained in a BOM CSV and associated format record. Both backup hashes exactly match the Excel-edited originals.
+
+The task prepares daily, monthly and associated outputs before replacement. A guarded non-overwrite rename protocol and independent public backups support recovery. A developer auxiliary test exercises a real third-output I/O failure in the production committer after two replacements and verifies both original byte hashes are restored without consuming backups. The GUI lock tests instead reject before replacement, preserving both old hashes and reporting NotCommitted. These trigger stages are kept separate; the GUI tests are not represented as late-commit failure execution.
+
+Actual Excel then verifies DEP35→PNL−7 and Check −295.5. A fixture-preparation rejection and two setup-tool mistakes are recorded separately from validated business cases. Extra screenshot reruns are not added to the business case count. Existing user Excel was untouched.
+
+When a valid prior cache lacks a current stable key, the engine may rebuild that same date from all required raw balance inputs. Only explicitly present numbers, including explicit zero, fill the gap. Missing raw files or a still-missing key retain the missing-basis state; no older date is mixed in and no zero is invented. This was covered by focused developer checks and the installed new-key rerun.
