@@ -57,12 +57,15 @@ try{
   $cell=$sheet.Cells.Item($r,$headers.DEP)
   if($null -eq $manual[$key]){$cell.ClearContents()|Out-Null}else{$cell.Value2=[double]$manual[$key]}
   $cell.NumberFormat='$#,##0.0000;[Red]-$#,##0.0000'
+  $cell.Font.Name='Consolas';$cell.Font.Size=12;$cell.Font.Bold=$true;$cell.Font.Color=0x663300
+  $cell.Interior.Color=0xE4E7F6;$cell.Borders.Item(9).LineStyle=1;$cell.Borders.Item(9).Weight=2
+  $cell.HorizontalAlignment=-4152;$cell.VerticalAlignment=-4108;$cell.WrapText=$true;$cell.Locked=$false
   $result.ManualDEP+=@{Key=$key;Value=$cell.Value2;NumberFormat=$cell.NumberFormat}
  }
  # Real Excel sorting and tab movement are intentional inputs to the rerun test.
  $range=$sheet.Range($sheet.Cells.Item(2,1),$sheet.Cells.Item($sheet.UsedRange.Rows.Count,$sheet.UsedRange.Columns.Count))
  [void]$range.Sort($sheet.Cells.Item(2,$headers.Currency),2,$null,$null,1,$null,1,2)
- $book.Worksheets.Item('Bank').Move($book.Worksheets.Item(1))
+ if($book.Worksheets.Item('Bank').Index -ne 1){$book.Worksheets.Item('Bank').Move($book.Worksheets.Item(1))}
  $excel.CalculateFull();$sheet.Activate();$excel.ActiveWindow.Zoom=85
  $book.Save();$book.SaveCopyAs((Join-Path $EvidenceDirectory 'seeded-daily.xlsx'))
  Capture-Owned $excel (Join-Path $EvidenceDirectory 'excel-seeded-dep.png')
@@ -76,6 +79,9 @@ try{
    $cell=$sheet.Cells.Item($r,$column)
    if($null -eq $numbers[$column]){$cell.ClearContents()|Out-Null}else{$cell.Value2=[double]$numbers[$column]}
    if($column -eq 7){$cell.NumberFormat='$#,##0.0000;[Red]-$#,##0.0000'}
+   $cell.Font.Name='Consolas';$cell.Font.Size=11;$cell.Font.Italic=$true;$cell.Font.Color=0x336633
+   $cell.Interior.Color=0xDDF0DD;$cell.Borders.Item(9).LineStyle=1;$cell.Borders.Item(9).Weight=2
+   $cell.HorizontalAlignment=-4131;$cell.VerticalAlignment=-4108;$cell.WrapText=$true;$cell.Locked=$false
    $result.MonthlyManual+=@{Date=$day;Column=$column;Value=$cell.Value2;NumberFormat=$cell.NumberFormat}
   }
  }
@@ -87,10 +93,9 @@ try{
    # sorting on each sheet can itself break linked formulas before the app is run.
    [void]$s.Rows.Item($current).Cut()
    [void]$s.Rows.Item($first).Insert(-4121)
-   $excel.CutCopyMode=$false
   }
  }
- $sheet.Move($book.Worksheets.Item(1));$excel.CalculateFull();$sheet.Activate();$excel.ActiveWindow.Zoom=85
+ if($sheet.Index -ne 1){$sheet.Move($book.Worksheets.Item(1))};$excel.CalculateFull();$sheet.Activate();$excel.ActiveWindow.Zoom=85
  $book.Save();$book.SaveCopyAs((Join-Path $EvidenceDirectory 'seeded-monthly.xlsx'))
  Capture-Owned $excel (Join-Path $EvidenceDirectory 'excel-seeded-monthly.png')
  $book.Close($false);[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($book);$book=$null

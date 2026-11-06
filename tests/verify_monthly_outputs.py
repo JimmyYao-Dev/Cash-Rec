@@ -9,6 +9,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+from excel_style_signature import cell_style_signature
 
 from verify_outputs import compare, number
 
@@ -178,6 +179,8 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
                 compare(cell.value,wanted,"Break down manual/Error " + field)
                 if cell.data_type=="f" or (wanted is not None and (cell.data_type!="n" or isinstance(cell.value,bool))):
                     raise AssertionError("Manual/Error fields must retain actual blank or numeric input types")
+                if field in oracle.get("manual_cell_styles", {}) and cell_style_signature(cell) != oracle["manual_cell_styles"][field]:
+                    raise AssertionError("Break down original manual cell style changed: " + field)
         if stage == "check":
             if "tmnz" in norm(formula_breakdown.cell(1,8).value) or "tma" not in norm(formula_breakdown.cell(1,8).value):
                 raise AssertionError("TMA settlement header must exclude the obsolete TMNZ entity")

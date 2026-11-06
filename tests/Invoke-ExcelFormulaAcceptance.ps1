@@ -37,6 +37,7 @@ try{
  $result.OwnNewInstance=$owned
  if(-not $owned){throw 'COM did not create an isolated Excel process; existing user instance will not be modified or closed.'}
  $excel.Visible=$true
+ $excel.WindowState=-4137
  $excel.DisplayAlerts=$false
  $excel.AskToUpdateLinks=$false
  $book=$excel.Workbooks.Open($Workbook,0,$false)
@@ -73,6 +74,7 @@ try{
  $copy=Join-Path $EvidenceDirectory 'Excel-edited-synthetic-result.xlsx'
  $book.SaveCopyAs($copy)
  $result.EditedCopy=$copy
+ $excel.ActiveWindow.Zoom=75
  [void][CashRecExcelWindow]::SetForegroundWindow([IntPtr]$excel.Hwnd)
  Start-Sleep -Milliseconds 300
  $rect=[CashRecExcelWindow+Rect]::new()

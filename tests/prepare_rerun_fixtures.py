@@ -10,6 +10,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 import generate_monthly_fixtures as monthly
+from excel_style_signature import cell_style_signature
 
 
 def read_json(path: Path) -> dict:
@@ -59,10 +60,16 @@ def mutate(workspace: Path, setup: Path) -> dict:
     sheet = book["Equity"]; headers = {cell.value: cell.column for cell in sheet[1]}
     saved_dep_formats = {"/".join(str(sheet.cell(r, headers[k]).value) for k in ["Branch", "Retail Type", "Currency"]):
         sheet.cell(r, headers["DEP"]).number_format for r in range(2, sheet.max_row + 1)}
+    saved_dep_styles = {"/".join(str(sheet.cell(r, headers[k]).value) for k in ["Branch", "Retail Type", "Currency"]):
+        cell_style_signature(sheet.cell(r, headers["DEP"])) for r in range(2, sheet.max_row + 1)}
     book.close()
     book = load_workbook(monthly_path, data_only=False)
     saved_monthly_formats = {book["Break down"].cell(r, 1).value.strftime("%Y-%m-%d"):
         {letter: book["Break down"][f"{letter}{r}"].number_format for letter in ["G", "L", "M", "N", "O", "P"]}
+        for r in range(2, book["Break down"].max_row + 1) if hasattr(book["Break down"].cell(r, 1).value, "strftime")}
+    saved_monthly_styles = {book["Break down"].cell(r, 1).value.strftime("%Y-%m-%d"):
+        {field: cell_style_signature(book["Break down"].cell(r, column))
+         for column, field in [(7, "To LP"), (12, "Bank Fee"), (13, "Bank fee-conversion"), (14, "Time Diff")]}
         for r in range(2, book["Break down"].max_row + 1) if hasattr(book["Break down"].cell(r, 1).value, "strftime")}
     book.close()
     # New IB/EUR key has an explicit zero prior amount, not an assumed missing-key zero.
@@ -70,6 +77,7 @@ def mutate(workspace: Path, setup: Path) -> dict:
         path = workspace / day / "Needed files/MT4/Risk/Accounting Equity Report.csv"
         with path.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle); headers = reader.fieldnames; rows = list(reader)
+        rows = [r for r in rows if r["login"] != "SYN-NEW-IB-EUR"]
         if day == "2026.10.25":
             rows = [r for r in rows if r["login"] != "SYN-E6"]
             next(r for r in rows if r["login"] == "SYN-E1")["positive_equity"] = "60"
@@ -102,13 +110,14 @@ def mutate(workspace: Path, setup: Path) -> dict:
     # Saving a synthetic workbook with openpyxl does not calculate its existing Pending formulas.
     caches = {}
     pending = load_workbook(path, data_only=False)["PSP On The Way"]
-    for row in pending.iter_rows(min_row=3):
-        if row[16].value in monthly.PENDING["2026.10.25"]:
-            values = monthly.PENDING["2026.10.25"][row[16].value]
-            caches.update({f"{column}{row[0].row}": value for column, value in zip(["R", "S", "T"], values)})
+    for row in pending.iter_rows(min_row=2):
+        if row[19].data_type == "f":
+            caches[f"T{row[0].row}"] = row[17].value - row[18].value
     monthly.daily.cache_formula_numbers(path, "PSP On The Way", caches)
     mapping = workspace / "db/tmc/account_mapping.xlsx"
-    book = load_workbook(mapping); book["PSP MAPPING"].append(["PSPGL", "NewGateway", "EUR", "TMC", "TMG", "PSP Balance Summary"])
+    book = load_workbook(mapping)
+    if not any(r[0].value == "PSPGL" and r[1].value == "NewGateway" and r[2].value == "EUR" for r in book["PSP MAPPING"].iter_rows(min_row=2)):
+        book["PSP MAPPING"].append(["PSPGL", "NewGateway", "EUR", "TMC", "TMG", "PSP Balance Summary"])
     book.save(mapping); book.close()
     expected = read_json(workspace / "expected_comment_policy.json")
     equity = expected["sheets"]["Equity"]
@@ -117,6 +126,7 @@ def mutate(workspace: Path, setup: Path) -> dict:
     for row in equity["rows"]:
         key = "/".join(str(row[k]) for k in ["Branch", "Retail Type", "Currency"])
         row["DEP"] = manual[key]["Value"]; row["DEP Number Format"] = saved_dep_formats[key]
+        row["DEP Cell Style"] = saved_dep_styles[key]
         if key == "TMA/Standard/USD": row.update(Amount=108, **{"USD Equivalent": 108, "Movement": 28})
         if key == "TMA/IB/AUD": row.update(Amount=150, **{"USD Equivalent": 120, "Movement": 40})
     equity["rows"].append({"Branch": "TMG", "Retail Type": "IB", "Currency": "EUR", "Amount": 12.5,
@@ -139,11 +149,13 @@ def mutate(workspace: Path, setup: Path) -> dict:
         "To Settle adj (TMG)": -11, "To Commission": -30, "Check": -295.5})
     report["manual_values"] = {"To LP": -5, "Bank Fee": 0, "Bank fee-conversion": None, "Time Diff": -2.5}
     report["breakdown_number_formats"] = saved_monthly_formats["2026-10-25"]
+    report["manual_cell_styles"] = saved_monthly_styles["2026-10-25"]
     report["allow_sheet_reorder"] = True
     write_json(workspace / "rerun_monthly_expected.json", report)
     history = expected_22(workspace)
     history["manual_values"] = {"To LP": 0, "Bank Fee": -3, "Bank fee-conversion": None, "Time Diff": None}
     history["breakdown"]["Check"] = -476; history["breakdown_number_formats"] = saved_monthly_formats["2026-10-22"]
+    history["manual_cell_styles"] = saved_monthly_styles["2026-10-22"]
     history["allow_sheet_reorder"] = True
     write_json(workspace / "rerun_history_expected.json", history)
     contract = {"synthetic_only": True, "business_acceptance_executed": False, "unmatched_expected": {
