@@ -71,7 +71,7 @@ def grouped_column(columns: dict, group: str, field: str) -> int:
     return matches[0]
 
 
-def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str], incomplete: bool) -> dict:
+def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str], incomplete: bool, missing_diff_fields: list[str]) -> dict:
     oracle = json.loads(oracle_path.read_text(encoding="utf-8-sig"))
     if not oracle.get("synthetic_only"):
         raise ValueError("Only independently specified synthetic oracles are accepted.")
@@ -101,7 +101,7 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
                 entity_values[entity][field] = actual
                 diff_column = grouped_column(columns, "DIFF", field)
                 diff = sheet.cell(row, diff_column).value
-                compare(diff, None if incomplete else oracle["diffs"][entity][field], f"{entity} DIFF/{field}")
+                compare(diff, None if incomplete or field in missing_diff_fields else oracle["diffs"][entity][field], f"{entity} DIFF/{field}")
             settle_column = grouped_column(columns, "BANK", "SETTLE PNL")
             if settle_column != 14:
                 raise AssertionError("SETTLE PNL must occupy N after removing original I/K/M.")
@@ -167,10 +167,11 @@ def main() -> int:
     parser.add_argument("--stage", choices=STAGES, default="balances")
     parser.add_argument("--expected-dates", nargs="+", default=[])
     parser.add_argument("--incomplete", action="store_true")
+    parser.add_argument("--missing-diff-fields", nargs="+", choices=BALANCE_FIELDS, default=[])
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     try:
-        result = verify(args.workbook, args.expected, args.stage, args.expected_dates, args.incomplete)
+        result = verify(args.workbook, args.expected, args.stage, args.expected_dates, args.incomplete, args.missing_diff_fields)
         status = 0
     except Exception as error:
         result = {"passed":False, "workbook":str(args.workbook), "error":str(error)}

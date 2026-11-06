@@ -147,6 +147,10 @@ try{
  $screenshot=Join-Path $EvidenceDirectory ('03-excel-monthly-'+$Mode+'.png')
  Capture-OwnedWindow $excel $screenshot
  $result.Screenshot=$screenshot;$result.ScreenshotCapture='PrintWindow on the owned Excel HWND'
+ # Excel can hold a sharing lock even when we only read/recalculate the source.
+ $book.Close($false)
+ [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($book)
+ $book=$null
  $result.SourceUnchanged=(Get-FileHash -LiteralPath $Workbook -Algorithm SHA256).Hash -eq $sourceHash
  if(-not $result.SourceUnchanged){throw 'Actual Excel verification modified the original generated workbook.'}
  $result.Passed=$true
