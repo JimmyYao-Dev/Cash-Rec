@@ -6,8 +6,8 @@ Scope: Issues #9–#15. Parent #1 remains open. Each business case starts from t
 | --- | --- | --- |
 | #9 Monthly balances, Pending, DIFF and SETTLE PNL | Passed; confirmed Comment policy also revalidated | Original `9f67fa6`, affected rerun `742d7c1` |
 | #10 Source-specific net flows | Passed; confirmed-policy rerun passed | Original `dbc40ab`, affected rerun `742d7c1` |
-| #11 Breakdown and manual area | Implementation in progress | Not yet accepted |
-| #12 Settlement, commission and Check | Pending dependency | Not yet accepted |
+| #11 Breakdown and manual area | Installed GUI/Excel gate passed | App source `2294a62` |
+| #12 Settlement, commission and Check | Implementation in progress | Not yet accepted |
 | #13 Rerun preservation and backups | Pending dependency | Not yet accepted |
 | #14 Monthly append and rollover | Pending dependency | Not yet accepted |
 | #15 Date range and missing dates | Pending dependency | Not yet accepted |
@@ -49,3 +49,11 @@ The same synthetic base now correctly produces settlement 385/−7/378; its prev
 After rerunning day 25, the old day 22 remains marked unknown and the workbook is explicitly Mixed with a warning. After rerunning day 22, its settlement becomes 325/−3/322 and the workbook becomes current. Owned Excel had seeded day 22 manual values −5, numeric zero, true blank and −2.5; both runs preserved those values and formats. This verifies policy compatibility only, not the complete later Issue #13 acceptance. Balance valuation rules and manual DEP keys were unchanged.
 
 Local summary: `.scratch/monthly-implementation/acceptance/t10-comment-keywords/source-742d7c1-summary.json`. These rounds overlap earlier scenarios and must not be summed as a count of distinct final-release tests.
+
+## Issue #11
+
+App source `2294a62309ff8a6d98c328a18494f86cf08fe630`; installer SHA256 `D613FE2298B4CCFCD5F2BFF25211B56A6067F9327D661FEFC95363FE2839F08E`, 36,987,004 bytes. Eight installed GUI cases and two actual Excel ManualArea checks passed. Normal and keyword fixtures produce synthetic B100/C263/D250/E−8/F21; mixed flows produce D345/E0/F−82. These signs are retained.
+
+After seeding an old complete C/F263/21, a missing-prior run correctly clears C/F and unavailable DIFF values while preserving usable B/D/E. Old Error 17 and obsolete Pending DIFF placeholder values are cleared without removing formats. Actual owned Excel verifies true blank/nonformula manual cells, then enters negative, numeric zero, blank and −2.5 values and checks types and formats. Check is not required at this stage and overall completion remains false.
+
+Historical 25/22 date-row cases also passed. Two reader invocation setup mistakes (array argument handling and an omitted policy sidecar) were corrected before final assertions; they are not app failures and the source inputs were not changed to fit output. Evidence is under `.scratch/monthly-implementation/acceptance/t11`.
