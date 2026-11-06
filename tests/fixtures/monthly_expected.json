@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "synthetic_only": true,
+  "business_date": "2026-10-25",
+  "previous_date": "2026-10-22",
+  "notes": ["Hand-specified independent amounts; no application code used", "SETTLE PNL follows independently verified legacy Retail transaction enums; TMA six categories and TMG SETTLE only"],
+  "balances": {
+    "TMA": {"Insto": 0, "Retail": 880, "Wholesale": 10, "PSP": 103, "PSP Pending": 100, "Settle": 100},
+    "TMG": {"Insto": 20, "Retail": 0, "Wholesale": 400, "PSP": 150, "PSP Pending": 200, "Settle": 0},
+    "Total": {"Insto": 20, "Retail": 880, "Wholesale": 410, "PSP": 253, "PSP Pending": 300, "Settle": 100}
+  },
+  "previous_balances": {
+    "TMA": {"Insto": 0, "Retail": 800, "Wholesale": 10, "PSP": 90, "PSP Pending": 80, "Settle": 80},
+    "TMG": {"Insto": 10, "Retail": 0, "Wholesale": 350, "PSP": 110, "PSP Pending": 150, "Settle": 0},
+    "Total": {"Insto": 10, "Retail": 800, "Wholesale": 360, "PSP": 200, "PSP Pending": 230, "Settle": 80}
+  },
+  "diffs": {
+    "TMA": {"Insto": 0, "Retail": 80, "Wholesale": 0, "PSP": 13, "PSP Pending": 20, "Settle": 20},
+    "TMG": {"Insto": 10, "Retail": 0, "Wholesale": 50, "PSP": 40, "PSP Pending": 50, "Settle": 0},
+    "Total": {"Insto": 10, "Retail": 80, "Wholesale": 50, "PSP": 53, "PSP Pending": 70, "Settle": 20}
+  },
+  "flows": {
+    "TMA": {"PSP DEP": 100, "PSP WITH": -30, "NET PSP": 70, "NET BW": 100, "NET WS": -8},
+    "TMG": {"PSP DEP": 100, "PSP WITH": -20, "NET PSP": 80, "NET BW": 0, "NET WS": 0},
+    "Total": {"PSP DEP": 200, "PSP WITH": -50, "NET PSP": 150, "NET BW": 100, "NET WS": -8}
+  },
+  "settle_pnl": {"TMA": 81, "TMG": -7, "Total": 74},
+  "breakdown": {"Settle Bal": 100, "Client Bank Move": 263, "MT4": 250, "WS DEP": -8, "Diff": 21, "To settle pnl (TMA)": 81, "To Settle adj (TMG)": -7, "To Settle (WS)": 0, "To Commission": -25, "Check": -28},
+  "manual_blank_columns": ["To LP", "Bank Fee", "Bank fee-conversion", "Time Diff", "Error"],
+  "breakdown_number_formats": {
+    "G": "\"$\"#,##0.00;[Red]\\-\"$\"#,##0.00",
+    "L": "_-* #,##0.00_-;\\-* #,##0.00_-;_-* \"-\"??_-;_-@_-",
+    "M": "_-* #,##0.00_-;\\-* #,##0.00_-;_-* \"-\"??_-;_-@_-",
+    "N": "General",
+    "O": "General",
+    "P": "_-* #,##0.00_-;\\-* #,##0.00_-;_-* \"-\"??_-;_-@_-"
+  },
+  "exact_sheets": ["TMA", "TMG", "Total", "Break down"],
+  "removed_balance_columns": ["Insto Pending", "Retail Pending", "Wholesale Pending"]
+}

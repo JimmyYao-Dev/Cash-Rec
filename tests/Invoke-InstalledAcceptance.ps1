@@ -5,6 +5,8 @@ param(
  [datetime]$BusinessDate = '2026-10-25',
  [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
  [ValidateSet('Complete','Partial','Failure','PreflightReady','PreflightFailure')][string]$ExpectedOutcome='Complete',
+ [string]$ExpectedMonthlyStage,
+ [ValidateSet('Complete','Incomplete')][string]$ExpectedMonthlyStageOutcome,
  [int]$TimeoutSeconds=120,
  [string]$CaseScale='synthetic-small',
  [switch]$PreflightOnly,
@@ -193,7 +195,8 @@ try {
   $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
   do {
    $candidate=Wait-Diagnostic $start $window $run
-   if($candidate.Value.PSObject.Properties.Name -contains 'Complete'){$runDiagnostic=$candidate}
+   if(($candidate.Value.PSObject.Properties.Name -contains 'Complete') -and
+      (-not $ExpectedMonthlyStage -or ($candidate.Value.PSObject.Properties.Name -contains 'MonthlyStage'))){$runDiagnostic=$candidate}
    if($null -eq $runDiagnostic){Start-Sleep -Milliseconds 200}
   }while($null -eq $runDiagnostic -and [DateTime]::UtcNow -lt $deadline)
   if($null -eq $runDiagnostic){throw 'The generated report diagnostic was not observed.'}
@@ -201,6 +204,14 @@ try {
   $result.Measurements.RunToDiagnosticMilliseconds=[math]::Round($runWatch.Elapsed.TotalMilliseconds,1)
   $result.DiagnosticFile=$runDiagnostic.File
   $result.Run=$runDiagnostic.Value
+  if($ExpectedMonthlyStage){
+   if($runDiagnostic.Value.MonthlyStage -ne $ExpectedMonthlyStage){throw 'The actual installed task reported a different monthly stage.'}
+   if($ExpectedMonthlyStageOutcome){
+    $wantedStageComplete=$ExpectedMonthlyStageOutcome -eq 'Complete'
+    if([bool]$runDiagnostic.Value.MonthlyStageComplete -ne $wantedStageComplete){throw 'The actual installed monthly stage completion did not match the expected outcome.'}
+    if($wantedStageComplete -and -not(Test-Path -LiteralPath $runDiagnostic.Value.MonthlyOutput -PathType Leaf)){throw 'The actual installed monthly stage reported completion without its output workbook.'}
+   }
+  }
   $outcome=if($runDiagnostic.Value.Complete){'Complete'}elseif($runDiagnostic.Value.Output){'Partial'}else{'Failure'}
   Capture-Window $window (Join-Path $EvidenceDirectory '02-generated.png')
  }
