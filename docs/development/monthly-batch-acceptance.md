@@ -10,7 +10,7 @@ Scope: Issues #9–#15. Parent #1 remains open. Each business case starts from t
 | #12 Settlement, commission and Check | Installed GUI/Excel gate passed | App source `7e913c5` |
 | #13 Rerun preservation and backups | Installed GUI/Excel gate passed | App source `16bfd9d` |
 | #14 Monthly append and rollover | Installed GUI/Excel gate passed after marker fix | App source `aa42e4d` |
-| #15 Date range and missing dates | Implementation in progress | Not yet accepted |
+| #15 Date range and missing dates | Installed GUI/Excel gate passed | App source `2c519e5` |
 
 ## Issue #9
 
@@ -89,3 +89,13 @@ The four sheets retain only the consistent last valid October date in the new No
 Missing, empty and inconsistent prior baselines fail honestly. An initial no-prior result cannot bypass its pending cross-month initialization by running a later same-month day. Once the prior month is supplied, recovery injects its closing row while preserving existing new-month dates and manual entries. Both baseline and selected-date classification markers remain current, without a false Mixed warning.
 
 The original `a197711` candidate is retained as held evidence. Its genuine late-carry classification-marker omission was fixed. A separate earlier Excel-open failure came from the fixture tool dropping namespace declarations referenced by `mc:Ignorable` while rewriting XML; the prepared input itself was invalid. The tool now preserves those declarations, a real Excel control proves the prepared source opens, and the complete acceptance was rerun on fresh inputs. No app compatibility workaround or repaired-open pass claim was used. Issue #15 started only after this corrected gate passed.
+
+## Issue #15
+
+Accepted app source `2c519e574f47a2c9ee16064c57cdc21743a3dc27`; installer SHA256 `BFA4B6C3A4F15AC533E6FBDC8A6D43588E1CDC116F44B5C3D38BF9AB609967A5`, 37,018,424 bytes. Eighteen actual GUI runs comprise ten main range calls, one manual same-day rerun and seven single-day preparation seeds. Five owned Excel operations comprise four manual-column matrix contexts and one DEP edit. These are execution counts, not eighteen successful generations or eighteen distinct scenarios. Local summary: `.scratch/monthly-implementation/acceptance/t15/source-2c519e5-summary.json`.
+
+The inclusive October31→November3 range processes all four calendar dates in order, including the weekend, with exact daily and monthly field/cache oracles. Complete source CSV windows remain intact. Missing folder, NAB GL file or selected PSP date is reported as Missing per day, while usable dates continue. Duplicate PSP dates produce Failed instead of Missing. All-missing is overall Missing; reversed dates produce Failed with zero day runs; no prior is Partial and Blocked with unavailable Previous/Movement/PNL/Check genuinely blank. A later valid day uses an actual valid prior, never a fabricated zero or adjacent PSP balance.
+
+Actual Excel cycles each G/L/M/N field through a negative number, numeric zero and clearing, checking Check, value types and unchanged formats at every step. It then saves M=−6.75 and DEP30 as actual inputs. GUI same-date rerun, cross-month carry, append and repeated range retain manual values/formats and correct caches before Excel opens: baseline October31 Check −580.75, current November3 −565.75. Both carried and appended rows are reopened in owned Excel and edited again. Exact backup hashes, previous-month protection, one-time initialization, unique dates and direct dated-folder-to-parent range resolution passed. All 335 captured raw/mapping hashes across seven cases stayed unchanged.
+
+This completes the individual ticket gates, not the final reviewed-release gate. Final two-axis review, any fixes and a separately built final-package regression still follow. Parent #1 stays open, PR20 stays Draft, and Issues #16–#19 remain outside this batch.
