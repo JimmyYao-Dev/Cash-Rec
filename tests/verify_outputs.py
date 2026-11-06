@@ -14,6 +14,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+from excel_style_signature import cell_style_signature
 
 SHEETS = ["Equity", "Bank", "PSP", "TransactionExchange"]
 STOCK_ONLY = {"Prev USD Equivalent", "Previous", "Movement"}
@@ -116,7 +117,7 @@ def verify(workbook_path: Path, oracle_path: Path, selected: list[str],
             for key, expected in wanted.items():
                 actual = actual_by_key[key]
                 for field, value in expected.items():
-                    if field == "DEP Number Format":
+                    if field in {"DEP Number Format", "DEP Cell Style"}:
                         continue
                     if stage == "current" and field in BEFORE_FINAL:
                         continue
@@ -159,6 +160,8 @@ def verify(workbook_path: Path, oracle_path: Path, selected: list[str],
                     manual_format = expected.get("DEP Number Format")
                     if manual_format is not None and formulas[name].cell(row_number, headers["DEP"]).number_format != manual_format:
                         raise AssertionError(f"Equity {key}: original manual DEP format changed")
+                    if expected.get("DEP Cell Style") is not None and cell_style_signature(formulas[name].cell(row_number, headers["DEP"])) != expected["DEP Cell Style"]:
+                        raise AssertionError(f"Equity {key}: manual DEP font/fill/border/alignment/protection style changed")
             for forbidden in contract.get("forbidden_columns", []):
                 if normalized_header(forbidden) in {normalized_header(h) for h in headers}:
                     raise AssertionError(f"{name}: flow table contains stock field {forbidden}")
