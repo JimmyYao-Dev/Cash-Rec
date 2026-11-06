@@ -18,7 +18,7 @@ from excel_style_signature import cell_style_signature
 
 SHEETS = ["Equity", "Bank", "PSP", "TransactionExchange"]
 STOCK_ONLY = {"Prev USD Equivalent", "Previous", "Movement"}
-BEFORE_FINAL = STOCK_ONLY | {"DEP"}
+BEFORE_FINAL = STOCK_ONLY | {"DEP", "Previous Date", "Previous Source"}
 TOLERANCE = Decimal("0.00000001")
 
 
@@ -125,6 +125,9 @@ def verify(workbook_path: Path, oracle_path: Path, selected: list[str],
                         raise AssertionError(f"{name}: missing field {field}")
                     if field == "Account Number":
                         compare(normalized_key(field, actual[field]), value, f"{name} {key} {field}")
+                    elif field == "Previous Date":
+                        observed = actual[field].date().isoformat() if isinstance(actual[field], datetime) else actual[field].isoformat() if isinstance(actual[field], date) else str(actual[field]).replace(".", "-")[:10]
+                        compare(observed, value, f"{name} {key} previous business date")
                     else:
                         compare(actual[field], value, f"{name} {key} {field}")
                 for field in ["Date", "Business Date"]:
