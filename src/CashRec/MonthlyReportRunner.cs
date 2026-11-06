@@ -22,7 +22,7 @@ internal static class MonthlyReportRunner
             Commit(prepared);
             var diagnostics = prepared.Report.Diagnostics;
             diagnostics.Add(new("Info", "月度报表", prepared.Report.StageComplete
-                ? "已生成月度余额、客户净额和 Break down 资金差额"
+                ? "已生成月度余额、资金差额、结算佣金及 Check"
                 : "已生成可用月度数据；缺失的 DIFF 或资金差额留空，请查看诊断记录"));
             return new(prepared.Destination, MonthlyStage.Current, prepared.Report.StageComplete, diagnostics);
         }
@@ -43,10 +43,13 @@ internal static class MonthlyReportRunner
         var directory = Path.Combine(Directory.GetParent(context.DateDirectory)!.FullName, "monthly");
         Directory.CreateDirectory(directory);
         var destination = Path.Combine(directory, $"CashRec_Breakdown_{context.BusinessDate:yyyy.MM}.xlsx");
+        var existing = File.Exists(destination) ? destination : null;
+        context.Progress?.Invoke("计算结算佣金与 Check");
+        MonthlySettlementCalculator.Apply(report, tables, MonthlyWorkbookWriter.ReadManualInputs(existing, context.BusinessDate), context.Progress);
         var temporary = Path.Combine(directory, ".CashRec-Monthly-" + Guid.NewGuid().ToString("N") + ".xlsx");
         try
         {
-            MonthlyWorkbookWriter.Write(temporary, File.Exists(destination) ? destination : null, report);
+            MonthlyWorkbookWriter.Write(temporary, existing, report);
             return new(destination, temporary, report);
         }
         catch { if (File.Exists(temporary)) File.Delete(temporary); throw; }

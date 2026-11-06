@@ -4,7 +4,7 @@ public sealed record MonthlyFormula(string Expression, decimal CalculatedValue);
 
 public static class MonthlyStage
 {
-    public const string Current = "Breakdown";
+    public const string Current = "Check";
 }
 
 public sealed class MonthlyReport(DateTime date)
@@ -19,7 +19,8 @@ public sealed class MonthlyReport(DateTime date)
     public bool BalancesComplete { get; internal set; }
     public bool FlowsComplete { get; internal set; }
     public bool BreakdownComplete { get; internal set; }
-    public bool StageComplete => BalancesComplete && FlowsComplete && BreakdownComplete;
+    public bool CheckComplete { get; internal set; }
+    public bool StageComplete => BalancesComplete && FlowsComplete && BreakdownComplete && CheckComplete;
     public List<object> Provenance { get; } = [];
 }
 

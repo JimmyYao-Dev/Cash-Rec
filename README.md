@@ -28,9 +28,11 @@ For Previous and Movement, keep earlier dated folders alongside the selected dat
 
 The base workbook has Equity, Bank, PSP and TransactionExchange sheets. Partial results and missing prerequisites are explicitly identified. Excel is used for subsequent manual edits and formula interaction; an output workbook is not proof that manual reconciliation is complete.
 
-The separate monthly workbook is saved beside the dated folders, at `monthly/CashRec_Breakdown_YYYY.MM.xlsx`. It contains TMA, TMG, Total and Break down. The current monthly stage supplies balances, PSP Pending, DIFF, SETTLE PNL, client-flow totals and the main Breakdown difference. PSP DEP/WITH, NET PSP and NET BW use the Transaction reports source; NET WS uses BANK BD Wholesale. Settlement/commission and Check are not yet complete. Blank downstream fields are not calculated zeroes.
+The separate monthly workbook is saved beside the dated folders, at `monthly/CashRec_Breakdown_YYYY.MM.xlsx`. It contains TMA, TMG, Total and Break down, including balances, PSP Pending, DIFF, SETTLE PNL, client-flow totals, settlement/commission and Check. PSP DEP/WITH, NET PSP and NET BW use the Transaction reports source; NET WS uses BANK BD Wholesale.
 
 Break down uses five client balance differences, MT4 net flows and the signed Wholesale net amount. To LP, fees and Time Diff start blank with their original formats for later manual entry; existing manual entries are retained. Error is kept blank. Missing difference inputs leave Client Bank Move and Diff blank instead of showing normal zeroes.
+
+Check keeps its original subtraction formula and responds to your manual entries in Excel. Settlement values come from the same date's TMA/TMG fields; commission uses signed USD equivalents. A nonzero Check does not prevent report generation, and successful generation does not mean the manual reconciliation has passed. Missing Diff leaves Check blank and the result incomplete.
 
 Monthly PSP Pending needs `BANK BD.xlsx` from both the selected date and the valid prior date. Each file must be the snapshot prepared for that specific date. Keep earlier snapshots in their own dated folders; do not replace an old snapshot with a later cumulative file. Missing or unreliable prior Pending leaves its DIFF blank, while a missing prior daily balance basis leaves all balance DIFF blank.
 
