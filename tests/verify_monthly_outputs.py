@@ -150,9 +150,12 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
                 compare(breakdown.cell(row, column).value, wanted, "Break down " + field)
                 if wanted is None and formula_breakdown.cell(row,column).value is not None:
                     raise AssertionError("Unavailable Breakdown client change/Diff must remain truly blank")
-            for column in (7,12,13,14,15):
-                if formula_breakdown.cell(row, column).value is not None:
-                    raise AssertionError("A first-run manual/Error field is not truly blank")
+            for column,field in [(7,"To LP"),(12,"Bank Fee"),(13,"Bank fee-conversion"),(14,"Time Diff"),(15,"Error")]:
+                cell = formula_breakdown.cell(row,column)
+                wanted = None if column==15 else oracle.get("manual_values",{}).get(field)
+                compare(cell.value,wanted,"Break down manual/Error " + field)
+                if cell.data_type=="f" or (wanted is not None and (cell.data_type!="n" or isinstance(cell.value,bool))):
+                    raise AssertionError("Manual/Error fields must retain actual blank or numeric input types")
         if stage == "check":
             for column, field in [(8,"To settle pnl (TMA)"),(9,"To Settle adj (TMG)"),(10,"To Settle (WS)"),(11,"To Commission"),(16,"Check")]:
                 compare(breakdown.cell(row, column).value, oracle["breakdown"][field], "Break down " + field)
