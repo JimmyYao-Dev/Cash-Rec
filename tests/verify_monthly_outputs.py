@@ -103,7 +103,10 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
                 entity_values[entity][field] = actual
                 diff_column = grouped_column(columns, "DIFF", field)
                 diff = sheet.cell(row, diff_column).value
-                compare(diff, None if incomplete or field in missing_diff_fields else oracle["diffs"][entity][field], f"{entity} DIFF/{field}")
+                missing_diff = incomplete or field in missing_diff_fields
+                compare(diff, None if missing_diff else oracle["diffs"][entity][field], f"{entity} DIFF/{field}")
+                if missing_diff and formula_sheet.cell(row,diff_column).value is not None:
+                    raise AssertionError(entity + " unavailable DIFF must remain truly blank")
             settle_column = grouped_column(columns, "BANK", "SETTLE PNL")
             if settle_column != 14:
                 raise AssertionError("SETTLE PNL must occupy N after removing original I/K/M.")
@@ -141,8 +144,12 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
         for column, wanted in oracle.get("breakdown_number_formats", {}).items():
             compare(formula_breakdown[f"{column}{row}"].number_format, wanted, "Break down original format " + column)
         if STAGES.index(stage) >= STAGES.index("breakdown"):
+            missing_client_diff = incomplete or any(field in missing_diff_fields for field in BALANCE_FIELDS[:-1])
             for column, field in [(2,"Settle Bal"),(3,"Client Bank Move"),(4,"MT4"),(5,"WS DEP"),(6,"Diff")]:
-                compare(breakdown.cell(row, column).value, oracle["breakdown"][field], "Break down " + field)
+                wanted = None if missing_client_diff and column in (3,6) else oracle["breakdown"][field]
+                compare(breakdown.cell(row, column).value, wanted, "Break down " + field)
+                if wanted is None and formula_breakdown.cell(row,column).value is not None:
+                    raise AssertionError("Unavailable Breakdown client change/Diff must remain truly blank")
             for column in (7,12,13,14,15):
                 if formula_breakdown.cell(row, column).value is not None:
                     raise AssertionError("A first-run manual/Error field is not truly blank")
