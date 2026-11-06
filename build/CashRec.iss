@@ -7,7 +7,7 @@
 [Setup]
 AppId={{761E54F2-4705-485F-A63B-8DDC75A6A96B}
 AppName=Cash Rec
-AppVersion=0.1.0
+AppVersion=0.2.0
 AppPublisher=Cash Rec
 DefaultDirName={localappdata}\Programs\Cash Rec
 DefaultGroupName=Cash Rec
