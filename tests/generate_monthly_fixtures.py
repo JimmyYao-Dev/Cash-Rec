@@ -19,6 +19,16 @@ PENDING = {
     "2026.10.25": {"TMA": (1000, 900, 100), "TMG": (2000, 1800, 200)},
 }
 SETTLEMENT_TYPES = ["SETTLE", "Posting TF TD", "MISC CIMB TF TD", "CFD TF TD", "Rebate TF TD", "Pending TF TD"]
+PRIORITY_CASES = [
+    ("Synthetic priority posting-fee", "tf fee", 301, "Bank Fee", "TMA"),
+    ("Synthetic priority psp settle", "psp settle", 302, "PSP Settle In", "TMA"),
+    ("Synthetic priority pending-withdrawal", "tf withdrawal", -303, "BW WD", "TMA"),
+    ("Synthetic priority miscellaneous decoy", "unrelated", 304, "Other", "TMA"),
+    ("Synthetic TMG CFD", "internal tf", 305, "CFD TF TD", "TMG"),
+    ("Synthetic psp settlement override", "psp settle fee", 306, "PSP Settle In", "TMA"),
+    ("Synthetic ordinary movement", "internal tf", 307, "Bank TF", "TMA"),
+    ("Synthetic deposit withdrawal priority", "dep with", -308, "BW WD", "TMA"),
+]
 
 
 def settlement_inputs(path: Path, day: datetime) -> None:
@@ -26,11 +36,15 @@ def settlement_inputs(path: Path, day: datetime) -> None:
     sheet = book["BANK BD"]
     for index, category in enumerate(SETTLEMENT_TYPES, 1):
         amount = 10 + index if day == daily.CURRENT else index
-        sheet.append([amount, None, "Synthetic TMA " + category, category, "USD", "TMA-Retail", amount])
+        rational = "settlement payout" if category == "SETTLE" else "internal tf"
+        sheet.append([amount, None, "Synthetic TMA " + category, rational, "USD", "TMA-Retail", amount])
     tmg_amount = -7 if day == daily.CURRENT else -3
-    sheet.append([None, -tmg_amount, "Synthetic TMG SETTLE", "SETTLE", "USD", "TMG-Retail", tmg_amount])
-    sheet.append([999, None, "Synthetic TMG excluded Posting", "Posting TF TD", "USD", "TMG-Retail", 999])
+    sheet.append([None, -tmg_amount, "Synthetic TMG SETTLE", "settlement payout", "USD", "TMG-Retail", tmg_amount])
+    sheet.append([999, None, "Synthetic TMG excluded Posting", "internal tf", "USD", "TMG-Retail", 999])
     sheet.append([None, 8, "Synthetic unrelated retail", "Unrelated adjustment", "USD", "TMA-Retail", -8])
+    for comment, rational, amount, expected_type, branch in PRIORITY_CASES:
+        sheet.append([amount if amount >= 0 else None, -amount if amount < 0 else None,
+                      comment, rational, "USD", branch + "-Retail", amount])
     book.save(path)
 
 
@@ -90,14 +104,19 @@ def generate(root: Path, scenario: str) -> None:
     transactions = expected["sheets"]["TransactionExchange"]
     for index, category in enumerate(SETTLEMENT_TYPES, 1):
         transactions["rows"].append({"Source":"BANK BD", "Comment":"Synthetic TMA " + category,
-            "Rational":category, "Branch":"TMA", "Type":"Retail", "Currency":"USD", "Amount":10 + index, "USD Equivalent":10 + index})
+            "Rational":"settlement payout" if category == "SETTLE" else "internal tf",
+            "Transaction Type":"Settle" if category == "SETTLE" else category,
+            "Branch":"TMA", "Type":"Retail", "Currency":"USD", "Amount":10 + index, "USD Equivalent":10 + index})
     transactions["rows"].extend([
-        {"Source":"BANK BD", "Comment":"Synthetic TMG SETTLE", "Rational":"SETTLE", "Branch":"TMG", "Type":"Retail", "Currency":"USD", "Amount":-7, "USD Equivalent":-7},
-        {"Source":"BANK BD", "Comment":"Synthetic TMG excluded Posting", "Rational":"Posting TF TD", "Branch":"TMG", "Type":"Retail", "Currency":"USD", "Amount":999, "USD Equivalent":999},
+        {"Source":"BANK BD", "Comment":"Synthetic TMG SETTLE", "Rational":"settlement payout", "Transaction Type":"Settle", "Branch":"TMG", "Type":"Retail", "Currency":"USD", "Amount":-7, "USD Equivalent":-7},
+        {"Source":"BANK BD", "Comment":"Synthetic TMG excluded Posting", "Rational":"internal tf", "Transaction Type":"Posting TF TD", "Branch":"TMG", "Type":"Retail", "Currency":"USD", "Amount":999, "USD Equivalent":999},
         {"Source":"BANK BD", "Comment":"Synthetic unrelated retail", "Rational":"Unrelated adjustment", "Branch":"TMA", "Type":"Retail", "Currency":"USD", "Amount":-8, "USD Equivalent":-8},
     ])
-    transactions["total_usd"] = 1447
-    transactions["source_totals_usd"]["BANK BD"] = 1197
+    for comment, rational, amount, expected_type, branch in PRIORITY_CASES:
+        transactions["rows"].append({"Source":"BANK BD", "Comment":comment, "Rational":rational,
+            "Transaction Type":expected_type, "Branch":branch, "Type":"Retail", "Currency":"USD", "Amount":amount, "USD Equivalent":amount})
+    transactions["total_usd"] = 2661
+    transactions["source_totals_usd"]["BANK BD"] = 2411
     (root / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (root / MARKER).write_text(json.dumps({"synthetic_only": True, "scenario": scenario, "dates": [d.strftime("%Y.%m.%d") for d in days]}, indent=2) + "\n", encoding="utf-8")
 

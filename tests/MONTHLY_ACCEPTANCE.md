@@ -21,9 +21,9 @@ The hand-specified `tests/fixtures/monthly_expected.json` intentionally distingu
 | NET BW | 100 | 0 | 100 |
 | NET WS | -8 | 0 | -8 |
 
-Previous Pending is 80/150, rather than the current 100/200. The five Total client balance DIFF fields sum to 263; MT4 is 250, Wholesale -8, so Breakdown Diff is 21. Initial Check is -28 once the later settlement/commission stage is implemented. The daily oracle is extended to 20 transactions, USD 1447; large unrelated Retail activity must not become NET BW or TMG settlement.
+Previous Pending is 80/150, rather than the current 100/200. The five Total client balance DIFF fields sum to 263; MT4 is 250, Wholesale -8, so Breakdown Diff is 21. Initial Check is -28 once the later settlement/commission stage is implemented. The daily oracle is extended to 28 transactions, USD 2661; large unrelated Retail activity must not become NET BW or TMG settlement.
 
-The SETTLE PNL oracle follows the verified original Retail summary semantics. TMA receives six distinct types with amounts 11 through 16; TMG receives SETTLE -7. TMG Posting TF TD 999 and unrelated Retail -8 are excluded from settlement. This deliberately differs from Equity PNL, Settle balance and Settle DIFF.
+The SETTLE PNL oracle follows the verified original Retail summary semantics. TMA receives six distinct types with amounts 11 through 16; TMG receives SETTLE -7. Source inputs use compound settlement descriptions or Comment category keywords plus Rational `internal tf`, rather than only whole-cell category names. TMG Posting TF TD 999 and unrelated Retail -8 are excluded from settlement. Eight additional cases independently specify rule precedence, keyword decoys and fee/PSP-settlement/withdrawal overrides. This deliberately differs from Equity PNL, Settle balance and Settle DIFF.
 
 Pending summary entity rows are reordered among out-of-scope decoys. Q:T has no summary-date column; the selected date folder supplies the snapshot, while left/right detail dates deliberately differ. T contains independently cached formulas R-S. `pending-uncached`, `pending-wrong-total`, `pending-duplicate`, `pending-missing-entity` and `no-previous` provide invalid/incomplete cases. Their outcome must be judged against the task diagnostic and absence of fabricated normal DIFF values.
 
