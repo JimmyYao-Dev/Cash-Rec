@@ -48,12 +48,15 @@ static void Run(string fixture, bool baselineOnly)
         Money(book, "Total", date, "D", 150); Money(book, "Total", date, "E", 100); Money(book, "Total", date, "F", -8);
         Assert(book.Worksheet("Total").Cell("N" + DateRow(book.Worksheet("Total"), date)).HasFormula, "Total is a live two-entity field formula");
         var breakdown = book.Worksheet("Break down");
-        for (var column = 2; column <= 16; column++) Assert(breakdown.Cell(2, column).IsEmpty(), "#9 Breakdown values remain genuinely absent");
+        Money(book, "Break down", date, "B", 100); Money(book, "Break down", date, "C", 263);
+        Money(book, "Break down", date, "D", 250); Money(book, "Break down", date, "E", -8); Money(book, "Break down", date, "F", 21);
+        foreach (var column in new[] { 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 })
+            Assert(breakdown.Cell(2, column).IsEmpty(), "Manual areas, Error and next-stage settlement/Check remain genuinely absent");
         Assert(breakdown.Cell("G2").Style.NumberFormat.Format == "\"$\"#,##0.00;[Red]\\-\"$\"#,##0.00", "Original To LP format retained");
     }
     using (var json = JsonDocument.Parse(File.ReadAllText(result.DiagnosticPath)))
     {
-        Assert(json.RootElement.GetProperty("MonthlyStage").GetString() == "Flows"
+        Assert(json.RootElement.GetProperty("MonthlyStage").GetString() == "Breakdown"
             && json.RootElement.GetProperty("MonthlyStageComplete").GetBoolean()
             && !json.RootElement.GetProperty("Complete").GetBoolean(), "Task diagnostic distinguishes complete stage from incomplete full monthly task");
     }
@@ -102,6 +105,8 @@ static void Run(string fixture, bool baselineOnly)
         using var book = new XLWorkbook(result.MonthlyOutput!);
         var sheet = book.Worksheet("Total"); Assert(sheet.Cell("W" + DateRow(sheet, date)).IsEmpty(), "Missing previous Pending clears stale DIFF");
         Money(book, "Total", date, "R", 80);
+        var breakdown = book.Worksheet("Break down"); var breakdownRow = DateRow(breakdown, date);
+        Assert(breakdown.Cell(breakdownRow, 3).IsEmpty() && breakdown.Cell(breakdownRow, 6).IsEmpty(), "Missing source DIFF clears stale Client Bank Move and Diff");
     }
     finally { File.Move(priorBankBd + ".held", priorBankBd); }
 
@@ -258,9 +263,12 @@ static void CheckClassificationHistory(string workspace, DateTime currentDate, s
         sheet.Cell(oldRow, 13).Clear(XLClearOptions.Contents);
         sheet.Cell(oldRow, 14).Value = -3;
         sheet.Cell(currentRow, 7).Value = -9;
+        sheet.Cell(currentRow, 15).Value = 17;
         manualFormat = sheet.Cell(oldRow, 12).Style.NumberFormat.Format;
         book.Worksheet("TMA").Cell("N" + DateRow(book.Worksheet("TMA"), earlier)).Value = 9999;
         book.Worksheet("TMA").Cell("N" + DateRow(book.Worksheet("TMA"), currentDate)).Value = 9999;
+        var total = book.Worksheet("Total");
+        foreach (var column in new[] { "Q", "S", "U" }) total.Cell(column + DateRow(total, currentDate)).Value = 10000;
         book.Save();
     }
     // Simulate the actual pre-change monthly format: no classification markers at all.
@@ -294,6 +302,9 @@ static void CheckClassificationHistory(string workspace, DateTime currentDate, s
     {
         Assert(book.CustomProperties.Single(property => property.Name == "CashRecClassification").Value.ToString() == ReportPolicy.MixedClassification, "Unrecomputed history is not silently relabeled");
         Money(book, "TMA", currentDate, "N", 385); Money(book, "TMA", earlier, "N", 9999);
+        Assert(book.Worksheet("Break down").Cell(DateRow(book.Worksheet("Break down"), currentDate), 15).IsEmpty(), "Error is cleared automatically without treating it as manual input");
+        var total = book.Worksheet("Total");
+        foreach (var column in new[] { "Q", "S", "U" }) Assert(total.Cell(column + DateRow(total, currentDate)).IsEmpty(), "Obsolete Pending difference placeholders cannot retain old automatic values");
         CheckManual(book);
     }
     var equity = BalanceWorkbookReader.ReadRows(dailyPath, "Equity", ["Branch", "Retail Type", "Currency", "DEP"])

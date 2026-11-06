@@ -137,7 +137,7 @@ public sealed class MainForm : Form
             if (result.DailyOutput != null) statusText.AppendText(Environment.NewLine + "每日基础表：" + result.DailyOutput);
             if (result.MonthlyOutput != null) statusText.AppendText(Environment.NewLine + "月度报表：" + result.MonthlyOutput);
             SetResult(Path.GetDirectoryName(result.MonthlyOutput ?? result.DailyOutput ?? result.DiagnosticPath)!,
-                result.MonthlyStageComplete ? "月度余额和客户净额已生成；完整月度核对尚未完成"
+                result.MonthlyStageComplete ? "资金差额已生成；完整月度核对尚未完成"
                     : result.DailyOutput != null ? "结果不完整，请查看诊断记录" : "未生成报表，请处理诊断中的问题");
         }
         catch (Exception error) { statusText.Text = "处理失败：" + error.Message; resultLabel.Text = "处理失败"; }

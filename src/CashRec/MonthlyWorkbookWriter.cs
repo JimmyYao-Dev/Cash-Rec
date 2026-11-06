@@ -37,7 +37,7 @@ internal static class MonthlyWorkbookWriter
                 var field = columns[column].Field;
                 var cell = sheet.Cell(number, column + 1);
                 // A missing previous value must also remove a previously saved DIFF.
-                if (name != "Break down" && IsAutomaticField(field))
+                if (name != "Break down" ? IsAutomaticField(field) : MonthlyBreakdownCalculator.AutomaticFields.Contains(field))
                 {
                     cell.Clear(XLClearOptions.Contents);
                     caches["xl/worksheets/sheet" + sheet.Position + ".xml"].Remove(Address(cell));
@@ -61,6 +61,7 @@ internal static class MonthlyWorkbookWriter
     }
 
     static bool IsAutomaticField(string field) => field == "SETTLE PNL"
+        || field is "Insto Pending DIFF" or "Retail Pending DIFF" or "Wholesale Pending DIFF"
         || MonthlyFlowCalculator.Fields.Contains(field)
         || MonthlyBalanceCalculator.BalanceFields.Contains(field)
         || MonthlyBalanceCalculator.BalanceFields.Any(balance => field == balance + " DIFF");

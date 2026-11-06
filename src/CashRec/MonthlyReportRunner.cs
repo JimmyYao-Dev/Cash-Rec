@@ -22,8 +22,8 @@ internal static class MonthlyReportRunner
             Commit(prepared);
             var diagnostics = prepared.Report.Diagnostics;
             diagnostics.Add(new("Info", "月度报表", prepared.Report.StageComplete
-                ? "已生成 TMA、TMG、Total 的余额、DIFF、SETTLE PNL 和客户净额"
-                : "已生成当前余额和客户净额；部分上期数据不可用，对应 DIFF 留空"));
+                ? "已生成月度余额、客户净额和 Break down 资金差额"
+                : "已生成可用月度数据；缺失的 DIFF 或资金差额留空，请查看诊断记录"));
             return new(prepared.Destination, MonthlyStage.Current, prepared.Report.StageComplete, diagnostics);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException)
@@ -38,6 +38,8 @@ internal static class MonthlyReportRunner
         var report = MonthlyBalanceCalculator.Calculate(context, tables);
         context.Progress?.Invoke("汇总客户净入出金与批发净额");
         MonthlyFlowCalculator.Apply(report, tables, context.Progress);
+        context.Progress?.Invoke("计算 Break down 资金差额");
+        MonthlyBreakdownCalculator.Apply(report);
         var directory = Path.Combine(Directory.GetParent(context.DateDirectory)!.FullName, "monthly");
         Directory.CreateDirectory(directory);
         var destination = Path.Combine(directory, $"CashRec_Breakdown_{context.BusinessDate:yyyy.MM}.xlsx");
