@@ -70,6 +70,7 @@ internal static class MonthlyReportRunner
             {
                 Date = output.Report.Date, PreviousDate = output.Report.PreviousDate,
                 MonthlyStage = MonthlyStage.Current, MonthlyStageComplete = output.Report.StageComplete,
+                Classification = ReportPolicy.Classification,
                 output.Report.Provenance, output.Report.Diagnostics,
             }, new JsonSerializerOptions { WriteIndented = true }));
     }

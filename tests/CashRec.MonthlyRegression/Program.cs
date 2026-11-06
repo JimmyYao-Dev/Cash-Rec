@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using System.IO.Compression;
 using System.Text.Json;
+using System.Xml.Linq;
 using CashRec;
 using ClosedXML.Excel;
 
@@ -31,7 +33,7 @@ static void Run(string fixture, bool baselineOnly)
         Assert(book.Worksheets.Select(sheet => sheet.Name).SequenceEqual(new[] { "TMA", "TMG", "Total", "Break down" }), "Exactly four monthly sheets");
         Money(book, "TMA", date, "H", 0); Money(book, "TMA", date, "I", 880); Money(book, "TMA", date, "J", 10);
         Money(book, "TMA", date, "K", 103); Money(book, "TMA", date, "L", 100); Money(book, "TMA", date, "M", 100);
-        Money(book, "TMA", date, "N", 81); Money(book, "TMG", date, "N", -7); Money(book, "Total", date, "N", 74);
+        Money(book, "TMA", date, "N", 385); Money(book, "TMG", date, "N", -7); Money(book, "Total", date, "N", 378);
         Money(book, "Total", date, "P", 10); Money(book, "Total", date, "R", 80); Money(book, "Total", date, "T", 50);
         Money(book, "Total", date, "V", 53); Money(book, "Total", date, "W", 70); Money(book, "Total", date, "X", 20);
         foreach (var name in new[] { "TMA", "TMG", "Total" })
@@ -60,12 +62,16 @@ static void Run(string fixture, bool baselineOnly)
     Assert(bankRows.Any(row => (string?)row["Company"] == "TMA-Retail" && (string?)row["Organization"] == "TMC"), "Source Company retained while organization normalized");
     foreach (var category in new[] { "Posting TF TD", "MISC CIMB TF TD", "CFD TF TD", "Rebate TF TD", "Pending TF TD" })
         Assert(bankRows.Any(row => (string?)row["Transaction Type"] == category), "Verified settlement category must not be lost to Other: " + category);
+    Assert(BalanceWorkbookReader.HasCurrentClassification(result.DailyOutput!), "Daily output declares the current classification policy");
+    Assert(BalanceWorkbookReader.HasCurrentClassification(result.MonthlyOutput!)
+        && BalanceWorkbookReader.HasCurrentClassification(result.MonthlyOutput!, date), "New monthly output has whole-file and per-date classification coverage");
     if (baselineOnly)
     {
         Console.WriteLine("PASS: synthetic monthly baseline; independent reader may inspect this developer-run artifact.");
         Console.WriteLine("Synthetic developer workspace: " + workspace);
         return;
     }
+    CheckClassificationHistory(workspace, date, result.MonthlyOutput!, result.DailyOutput!);
 
     // The previous set includes an account that disappeared; the current set includes a new key.
     var au = Path.Combine(current, "Bank", "NAB AU.csv");
@@ -160,6 +166,19 @@ static void CheckRetailPriority(string workspace)
         ("ordinary", "Adjustment", "Adjustment", "TMA-Retail"),
         ("PSP Commission", "PSP Commission", "PSP Commission", "TMA-Retail"),
         ("settle cfd", "settle + tf + fee", "Other", "TMA-Wholesale"),
+        ("CFD TF TD", "memo", "CFD TF TD", "TMA-Retail"),
+        ("MISC CIMB TF TD", "memo", "MISC CIMB TF TD", "TMA-Retail"),
+        ("posting", "memo", "Posting TF TD", "TMA-Retail"),
+        ("Rebate", "memo", "Rebate TF TD", "TMA-Retail"),
+        ("pending", "memo", "Pending TF TD", "TMA-Retail"),
+        ("SETTLE", "memo", "Settle", "TMA-Retail"),
+        ("cfd rebate PENDING", "memo", "Pending TF TD", "TMA-Retail"),
+        ("CFD TF TD", "fee", "Bank Fee", "TMA-Retail"),
+        ("SETTLE", "psp settle", "PSP Settle In", "TMA-Retail"),
+        ("SETTLE", "psp credit", "Other", "TMA-Retail"),
+        ("CFD TF TD", "deposit", "BW Dep", "TMA-Retail"),
+        ("miscellaneous decoy", "memo", "MISC CIMB TF TD", "TMA-Retail"),
+        ("MISC CIMB TF TD", "memo", "Other", "TMA-Wholesale"),
     ];
     using (var book = new XLWorkbook())
     {
@@ -200,17 +219,101 @@ static void CheckPrivateClassification(string workspace, string vectorsPath)
     var actual = table.Rows.Where(row => string.Equals(row.GetValueOrDefault("Type")?.ToString(), "Retail", StringComparison.OrdinalIgnoreCase))
         .ToDictionary(row => (int)row["Source Row"]!);
     var matched = 0;
+    var identityCoverage = true;
+    var confirmedChangesOnly = true;
+    var confirmedTypes = new[] { "Settle", "Posting TF TD", "MISC CIMB TF TD", "CFD TF TD", "Rebate TF TD", "Pending TF TD" }
+        .Select(DataValue.Normalize).ToHashSet();
     foreach (var vector in contract.GetProperty("vectors").EnumerateArray())
     {
-        if (actual.TryGetValue(vector.GetProperty("source_row").GetInt32(), out var row)
-            && string.Equals(row["Branch"]?.ToString(), vector.GetProperty("expected_branch").GetString(), StringComparison.OrdinalIgnoreCase)
-            && DataValue.Normalize(row["Transaction Type"]!.ToString()!) == DataValue.Normalize(vector.GetProperty("expected_transaction_type").GetString()!)) matched++;
+        if (!actual.TryGetValue(vector.GetProperty("source_row").GetInt32(), out var row)
+            || !string.Equals(row["Branch"]?.ToString(), vector.GetProperty("expected_branch").GetString(), StringComparison.OrdinalIgnoreCase))
+        { identityCoverage = false; continue; }
+        var type = DataValue.Normalize(row["Transaction Type"]!.ToString()!);
+        if (type == DataValue.Normalize(vector.GetProperty("expected_transaction_type").GetString()!)) matched++;
+        else if (!confirmedTypes.Contains(type)) confirmedChangesOnly = false;
     }
     var count = contract.GetProperty("expected_count").GetInt32();
     var errors = table.Diagnostics.Count(diagnostic => diagnostic.Severity == "Error");
-    var report = new { Passed = actual.Count == count && matched == count && errors == 0, ExpectedCount = count, ActualRetailCount = actual.Count, MatchedCount = matched, ErrorCount = errors, Entry = "Private C# adapter developer comparison; not installed-GUI acceptance" };
+    var report = new { Passed = actual.Count == count && identityCoverage && confirmedChangesOnly && errors == 0,
+        Policy = ReportPolicy.Classification, ExpectedCount = count, ActualRetailCount = actual.Count, UnchangedCount = matched,
+        ChangedUnderConfirmedPolicy = count - matched, IdentityCoverage = identityCoverage, ConfirmedChangesOnly = confirmedChangesOnly,
+        ErrorCount = errors, Entry = "Private C# adapter comparison to legacy classifications; intended keyword differences are allowed; not installed-GUI acceptance" };
     var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
     Console.WriteLine(json);
-    File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(vectorsPath))!, "csharp-retail-classification-validation-private.json"), json);
-    Assert(report.Passed, "Private comparison counts must agree");
+    File.WriteAllText(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(vectorsPath))!, "csharp-retail-classification-comparison-comment-keywords-private.json"), json);
+    Assert(report.Passed, "Private source identities must agree and category differences must follow the confirmed policy");
+}
+
+static void CheckClassificationHistory(string workspace, DateTime currentDate, string monthlyPath, string dailyPath)
+{
+    var earlier = new DateTime(2026, 10, 22);
+    var previousRun = ReportTaskRunner.Run(workspace, earlier);
+    Assert(previousRun.MonthlyStageComplete, "Historical synthetic fixture can be generated under the new policy");
+    string manualFormat;
+    using (var book = new XLWorkbook(monthlyPath))
+    {
+        var sheet = book.Worksheet("Break down"); var oldRow = DateRow(sheet, earlier); var currentRow = DateRow(sheet, currentDate);
+        sheet.Cell(oldRow, 7).Value = 0;
+        sheet.Cell(oldRow, 12).Value = -12.5;
+        sheet.Cell(oldRow, 13).Clear(XLClearOptions.Contents);
+        sheet.Cell(oldRow, 14).Value = -3;
+        sheet.Cell(currentRow, 7).Value = -9;
+        manualFormat = sheet.Cell(oldRow, 12).Style.NumberFormat.Format;
+        book.Worksheet("TMA").Cell("N" + DateRow(book.Worksheet("TMA"), earlier)).Value = 9999;
+        book.Worksheet("TMA").Cell("N" + DateRow(book.Worksheet("TMA"), currentDate)).Value = 9999;
+        book.Save();
+    }
+    // Simulate the actual pre-change monthly format: no classification markers at all.
+    using (var archive = ZipFile.Open(monthlyPath, ZipArchiveMode.Update))
+    {
+        var entry = archive.GetEntry("docProps/custom.xml")!;
+        XDocument xml;
+        using (var stream = entry.Open()) xml = XDocument.Load(stream);
+        foreach (var property in xml.Descendants().Where(element => element.Name.LocalName == "property"
+            && ((string?)element.Attribute("name") ?? "").StartsWith("CashRecClassification", StringComparison.Ordinal)).ToList()) property.Remove();
+        entry.Delete();
+        using var output = archive.CreateEntry("docProps/custom.xml").Open(); xml.Save(output);
+    }
+    using (var book = new XLWorkbook(dailyPath))
+    {
+        book.CustomProperties.Single(property => property.Name == "CashRecClassification").Value = "Legacy";
+        var sheet = book.Worksheet("Equity");
+        var headers = sheet.Row(1).CellsUsed().ToDictionary(cell => cell.GetString(), cell => cell.Address.ColumnNumber);
+        var row = sheet.RowsUsed().Skip(1).Single(row => row.Cell(headers["Branch"]).GetString() == "TMA"
+            && row.Cell(headers["Retail Type"]).GetString() == "Standard" && row.Cell(headers["Currency"]).GetString() == "USD");
+        row.Cell(headers["DEP"]).Value = 30; book.Save();
+    }
+    Assert(BalanceWorkbookReader.HasCurrentRules(dailyPath) && BalanceWorkbookReader.HasCompatibleManualKeys(dailyPath)
+        && !BalanceWorkbookReader.HasCurrentClassification(dailyPath), "Classification change must not invalidate balance valuation or manual keys");
+    var result = ReportTaskRunner.Run(workspace, currentDate);
+    Assert(result.MonthlyStageComplete && result.Diagnostics.Any(diagnostic => diagnostic.Source == "历史交易分类" && diagnostic.Severity == "Warning"), "Old history remains visible as needing recomputation");
+    Assert(!BalanceWorkbookReader.HasCurrentClassification(monthlyPath)
+        && BalanceWorkbookReader.HasCurrentClassification(monthlyPath, currentDate)
+        && !BalanceWorkbookReader.HasCurrentClassification(monthlyPath, earlier), "Only the recomputed date gets the current policy; whole-file marker is Mixed");
+    using (var book = new XLWorkbook(monthlyPath))
+    {
+        Assert(book.CustomProperties.Single(property => property.Name == "CashRecClassification").Value.ToString() == ReportPolicy.MixedClassification, "Unrecomputed history is not silently relabeled");
+        Money(book, "TMA", currentDate, "N", 385); Money(book, "TMA", earlier, "N", 9999);
+        CheckManual(book);
+    }
+    var equity = BalanceWorkbookReader.ReadRows(dailyPath, "Equity", ["Branch", "Retail Type", "Currency", "DEP"])
+        .Single(row => (string?)row["Branch"] == "TMA" && (string?)row["Retail Type"] == "Standard" && (string?)row["Currency"] == "USD");
+    Assert((decimal)equity["DEP"]! == 30m, "A stale classification tag must not discard manual DEP");
+    result = ReportTaskRunner.Run(workspace, earlier);
+    Assert(result.MonthlyStageComplete && BalanceWorkbookReader.HasCurrentClassification(monthlyPath)
+        && BalanceWorkbookReader.HasCurrentClassification(monthlyPath, earlier), "Recomputing the last legacy date resolves Mixed coverage");
+    using (var book = new XLWorkbook(monthlyPath))
+    {
+        Money(book, "TMA", earlier, "N", 325);
+        CheckManual(book);
+    }
+
+    void CheckManual(XLWorkbook book)
+    {
+        var sheet = book.Worksheet("Break down"); var oldRow = DateRow(sheet, earlier); var currentRow = DateRow(sheet, currentDate);
+        Assert(sheet.Cell(oldRow, 7).GetValue<decimal>() == 0m && sheet.Cell(oldRow, 12).GetValue<decimal>() == -12.5m
+            && sheet.Cell(oldRow, 13).IsEmpty() && sheet.Cell(oldRow, 14).GetValue<decimal>() == -3m
+            && sheet.Cell(currentRow, 7).GetValue<decimal>() == -9m, "Blank, zero and negative manual fields stay attached to their dates");
+        Assert(sheet.Cell(oldRow, 12).Style.NumberFormat.Format == manualFormat, "Historical manual formatting is retained");
+    }
 }

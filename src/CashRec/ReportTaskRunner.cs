@@ -19,6 +19,7 @@ public static class ReportTaskRunner
         {
             Output = result.DailyOutput, result.DailyOutput, result.MonthlyOutput, result.MonthlyStage,
             result.MonthlyStageComplete, result.Complete, DailyComplete = daily.Result.IsComplete,
+            Classification = ReportPolicy.Classification,
             result.Diagnostics,
         }, new JsonSerializerOptions { WriteIndented = true }));
         return result;

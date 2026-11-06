@@ -43,14 +43,14 @@ TMA uses SETTLE, Posting TF TD, MISC CIMB TF TD, CFD TF TD, Rebate TF TD and Pen
 
 BANK BD retains its original composite Company value. Organization=TMC supplies the normalized organization field; MT4 already has Company=TMC and is used as fallback. Unknown types retain Other and their original descriptions; they are excluded from this exact-category aggregate.
 
-The Retail description classifier was recovered from the old analysis function and checked against source-bound private old classifications. It lowercases Comment and Rational and applies these conditions in order. Every later match replaces an earlier result:
+The initial Retail classifier was recovered from the old analysis function. The user's 2026-11-06 confirmation then changed keyword detection; [business confirmations](../business-confirmations.md) takes precedence over old parity. Current processing lowercases Comment and Rational and applies these conditions in order. Every later match replaces an earlier result:
 
-1. Rational contains `settle` and does not contain `psp`: SETTLE.
-2. Comment contains `posting`, and Rational contains `tf`: Posting TF TD.
-3. Comment contains `misc`, and Rational contains `tf`: MISC CIMB TF TD.
-4. Comment contains `cfd`, and Rational contains `tf`: CFD TF TD.
-5. Comment contains `rebate`, and Rational contains `tf`: Rebate TF TD.
-6. Comment contains `pending`, and Rational contains `tf`: Pending TF TD.
+1. Comment or Rational contains `settle`, and Rational does not contain `psp`: SETTLE.
+2. Comment contains `posting`: Posting TF TD.
+3. Comment contains `misc`: MISC CIMB TF TD.
+4. Comment contains `cfd`: CFD TF TD.
+5. Comment contains `rebate`: Rebate TF TD.
+6. Comment contains `pending`: Pending TF TD.
 7. Rational contains `fee`, `interest` or `surcharge`: Bank Fee.
 8. Rational contains `psp settle`: PSP Settle In.
 9. Comment contains none of `settle/posting/misc/cfd/pending/rebate`, Rational contains `tf`, and Rational contains neither `wholesale` nor `insto`: Bank TF.
@@ -58,6 +58,8 @@ The Retail description classifier was recovered from the old analysis function a
 11. Rational contains `with` but neither `wholesale` nor `insto`: BW WD.
 
 This is a Retail-only sequence, not an exact whole-cell Rational lookup or a first-match rule. The current explicit commission recognition retains priority. With no recovered rule match, the already implemented explicit Adjustment/Transfer/Other classifications are preserved. Recovery does not restore obsolete entity selection, FLOOR rounding, automatic fees or To LP calculations.
+
+The independent current classification policy is `BANKBD-Retail-CommentKeywords-2026-11-06`. Daily automatic transaction results carry a whole-file marker. Monthly automatic cache consumers check the relevant `CashRecClassification_yyyyMMdd` property. Mixed retained history has a global `Mixed` marker and a warning; only the selected recomputed date is relabeled. Existing layout/valuation markers remain compatible and manual values are preserved. The balance snapshot reader deliberately does not require a transaction-classification marker when consuming balance-only fields.
 
 ## Layout and formula values
 
@@ -69,4 +71,4 @@ Break down retains its original single header row and all 16 columns. This stage
 
 Developer regressions assist diagnosis. Business acceptance must start through the installed GUI and use independent expected outputs. Formula text and populated caches do not replace actual Excel editing/recalculation tests when later tickets add those manual interaction requirements.
 
-`CashRec.MonthlyRegression` accepts a synthetic monthly fixture and verifies balances, flows, full-set changes, signed settlement categories, 14 independent compound-description/priority cases, field layout, formats, historical snapshots and missing-cache handling. `CashRec.FlowRegression` separately checks source/type/date isolation, signs, same-amount and zero records, USD basis, formulas and invalid consumed values. A private developer mode compares the C# adapter to source-SHA-bound row/type vectors and emits counts only; real descriptions and records are never committed. The installed flow candidate requires its own GUI acceptance before Issue #10 is complete.
+`CashRec.MonthlyRegression` accepts a synthetic monthly fixture and verifies balances, flows, full-set changes, signed settlement categories, compound-description/keyword/priority cases, field layout, formats, historical snapshots and missing-cache handling. It checks missing legacy classification markers, per-date/Mixed coverage and preservation of dated manual values and DEP. `CashRec.FlowRegression` separately checks source/type/date isolation, signs, same-amount and zero records, USD basis, formulas and invalid consumed values. A private developer mode compares the C# adapter to source-SHA-bound legacy vectors and emits counts only; intended current-policy differences are allowed, while source identity and unrelated categories remain checked. Real descriptions and records are never committed. Every changed installed candidate requires affected GUI/Excel acceptance again.

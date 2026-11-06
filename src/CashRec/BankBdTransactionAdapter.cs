@@ -158,14 +158,14 @@ public sealed class BankBdTransactionAdapter : IReportAdapter
         var label = comment.ToLowerInvariant();
         bool R(string value) => description.Contains(value, StringComparison.Ordinal);
         bool C(string value) => label.Contains(value, StringComparison.Ordinal);
-        // Recovered legacy order: every later condition replaces an earlier result.
-        // These apply only to Retail, after Company has been split into Branch/Type.
-        if (R("settle") && !R("psp")) category = "Settle";
-        if (C("posting") && R("tf")) category = "Posting TF TD";
-        if (C("misc") && R("tf")) category = "MISC CIMB TF TD";
-        if (C("cfd") && R("tf")) category = "CFD TF TD";
-        if (C("rebate") && R("tf")) category = "Rebate TF TD";
-        if (C("pending") && R("tf")) category = "Pending TF TD";
+        // User confirmation 2026-11-06: Comment keywords do not need Rational tf.
+        // Keep the established later-match conflict order and Retail scope.
+        if ((C("settle") || R("settle")) && !R("psp")) category = "Settle";
+        if (C("posting")) category = "Posting TF TD";
+        if (C("misc")) category = "MISC CIMB TF TD";
+        if (C("cfd")) category = "CFD TF TD";
+        if (C("rebate")) category = "Rebate TF TD";
+        if (C("pending")) category = "Pending TF TD";
         if (R("fee") || R("interest") || R("surcharge")) category = "Bank Fee";
         if (R("psp settle")) category = "PSP Settle In";
         if (!new[] { "settle", "posting", "misc", "cfd", "pending", "rebate" }.Any(C)
