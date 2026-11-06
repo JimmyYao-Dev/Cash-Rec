@@ -20,7 +20,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
         var manual = ReadManualDep(context);
         var matchedManual = new HashSet<string>();
         if (previous == null)
-            diagnostics.Add(new("Incomplete", "上期余额", "未找到此前有效的同口径余额基准；已保留当前余额，上期、Movement和PNL留空。请提供此前日期的原始余额输入或新版基础结果"));
+            diagnostics.Add(new("Incomplete", "上期余额", "未找到此前有效的同口径余额基准；已保留当前余额，上期、Movement和PNL留空。请提供此前日期的原始余额输入或新版基础结果", DiagnosticCode.MissingPriorBasis));
         foreach (var table in balances)
         {
             EnsureColumns(table, "Prev USD Equivalent", "Movement", "Previous Date", "Previous Source");
@@ -52,7 +52,7 @@ public sealed class PreviousBalanceFinalizer : IReportFinalizer
                     row["PNL"] = new FormulaCell($"{Address(table, "Movement", excelRow)}-{Address(table, "DEP", excelRow)}", movement - (dep ?? 0m));
             }
             if (missing.Count > 0)
-                diagnostics.Add(new("Incomplete", table.Name, $"上期{previous!.Date:yyyy.MM.dd}缺少{missing.Count}个业务键，不当零；例：{string.Join("；", missing.Take(5).Select(k => k.Replace('\u001f', '/')))}"));
+                diagnostics.Add(new("Incomplete", table.Name, $"上期{previous!.Date:yyyy.MM.dd}缺少{missing.Count}个业务键，不当零；例：{string.Join("；", missing.Take(5).Select(k => k.Replace('\u001f', '/')))}", DiagnosticCode.MissingPriorKey));
         }
         var unmatched = manual.Where(pair => !matchedManual.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value);
         if (unmatched.Count > 0)

@@ -22,7 +22,11 @@ if (args.Length > 1)
 {
     var missing = WorkspaceInputs.Inspect(Path.GetFullPath(args[1]), date);
     var failed = false;
-    try { new PspAdapter().Process(new(date, missing.DateDirectory, missing.Inputs, missing.MappingPath, DailyRates.Load(missing.Inputs["Rates"], date))); }
+    try
+    {
+        var rejected = new PspAdapter().Process(new(date, missing.DateDirectory, missing.Inputs, missing.MappingPath, DailyRates.Load(missing.Inputs["Rates"], date)));
+        failed = rejected.Rows.Count == 0 && rejected.Diagnostics.Any(diagnostic => diagnostic.Severity == "Error" && diagnostic.Code == DiagnosticCode.MissingPspDate);
+    }
     catch (InvalidDataException error) { failed = error.Message.Contains("2026.10.25"); }
     Assert(failed, "Missing PSP date rejected");
 }

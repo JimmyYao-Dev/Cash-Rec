@@ -26,6 +26,14 @@ public static class WorkspaceInputs
         return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
     }
 
+    public static string RangeWorkspace(string workspace)
+    {
+        var root = Path.GetFullPath(workspace).TrimEnd(Path.DirectorySeparatorChar);
+        return DateTime.TryParseExact(Path.GetFileName(root), "yyyy.MM.dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
+            ? Directory.GetParent(root)?.FullName ?? throw new InvalidDataException("日期目录没有可用父目录")
+            : Path.GetFullPath(workspace);
+    }
+
     public static PreflightResult Inspect(string workspace, DateTime date)
     {
         var diagnostics = new List<Diagnostic>();
@@ -36,7 +44,7 @@ public static class WorkspaceInputs
         var directory = DateDirectory(root, date);
         var mismatch = DateMismatch(directory, date);
         if (mismatch != null) diagnostics.Add(new("Error", "日期", mismatch));
-        if (!Directory.Exists(directory)) diagnostics.Add(new("Error", "日期目录", $"缺少 {directory}"));
+        if (!Directory.Exists(directory)) diagnostics.Add(new("Error", "日期目录", $"缺少 {directory}", DiagnosticCode.MissingInput));
         foreach (var definition in Definitions)
         {
             var path = Path.Combine(directory, "Needed files", definition.RelativePath.Replace('/', Path.DirectorySeparatorChar));
@@ -44,7 +52,7 @@ public static class WorkspaceInputs
             CheckReadable(path, diagnostics);
         }
         var mapping = FindMapping(root, directory);
-        if (mapping == "") diagnostics.Add(new("Error", "映射", "缺少 account_mapping.xlsx；请导入映射或放入工作区 config 目录"));
+        if (mapping == "") diagnostics.Add(new("Error", "映射", "缺少 account_mapping.xlsx；请导入映射或放入工作区 config 目录", DiagnosticCode.MissingInput));
         else CheckReadable(mapping, diagnostics);
         if (!diagnostics.Any(d => d.Severity == "Error")) diagnostics.Add(new("Info", "准备检查", $"{date:yyyy.MM.dd}：7项输入及账户映射均可读取"));
         return new(date.Date, directory, inputs, mapping, diagnostics);
@@ -52,7 +60,7 @@ public static class WorkspaceInputs
 
     static void CheckReadable(string path, List<Diagnostic> diagnostics)
     {
-        if (!File.Exists(path)) { diagnostics.Add(new("Error", Path.GetFileName(path), "缺少文件：" + path)); return; }
+        if (!File.Exists(path)) { diagnostics.Add(new("Error", Path.GetFileName(path), "缺少文件：" + path, DiagnosticCode.MissingInput)); return; }
         try
         {
             using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
