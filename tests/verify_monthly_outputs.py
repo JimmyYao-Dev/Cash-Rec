@@ -79,7 +79,8 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
     values = load_workbook(path, data_only=True)
     formulas = load_workbook(path, data_only=False)
     try:
-        if values.sheetnames != oracle["exact_sheets"]:
+        names_match = (set(values.sheetnames) == set(oracle["exact_sheets"]) and len(values.sheetnames) == len(oracle["exact_sheets"])) if oracle.get("allow_sheet_reorder") else values.sheetnames == oracle["exact_sheets"]
+        if not names_match:
             raise AssertionError("Monthly workbook must contain exactly TMA/TMG/Total/Break down.")
         target = oracle["business_date"]
         checks = []

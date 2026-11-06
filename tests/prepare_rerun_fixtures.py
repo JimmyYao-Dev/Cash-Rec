@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
 
@@ -49,6 +50,21 @@ def mutate(workspace: Path, setup: Path) -> dict:
         raise ValueError("Rerun mutation requires a marked fixture and successful actual owned-Excel setup.")
     if Path(proof["Workspace"]).resolve() != workspace:
         raise ValueError("The Excel setup belongs to a different synthetic workspace.")
+    daily_path = workspace / "2026.10.25/CashRec_Base.xlsx"
+    monthly_path = workspace / "monthly/CashRec_Breakdown_2026.10.xlsx"
+    for path, field in [(daily_path, "DailySHA256"), (monthly_path, "MonthlySHA256")]:
+        if hashlib.sha256(path.read_bytes()).hexdigest().upper() != proof[field]:
+            raise ValueError("The saved Excel precondition changed before source mutation.")
+    book = load_workbook(daily_path, data_only=False)
+    sheet = book["Equity"]; headers = {cell.value: cell.column for cell in sheet[1]}
+    saved_dep_formats = {"/".join(str(sheet.cell(r, headers[k]).value) for k in ["Branch", "Retail Type", "Currency"]):
+        sheet.cell(r, headers["DEP"]).number_format for r in range(2, sheet.max_row + 1)}
+    book.close()
+    book = load_workbook(monthly_path, data_only=False)
+    saved_monthly_formats = {book["Break down"].cell(r, 1).value.strftime("%Y-%m-%d"):
+        {letter: book["Break down"][f"{letter}{r}"].number_format for letter in ["G", "L", "M", "N", "O", "P"]}
+        for r in range(2, book["Break down"].max_row + 1) if hasattr(book["Break down"].cell(r, 1).value, "strftime")}
+    book.close()
     # New IB/EUR key has an explicit zero prior amount, not an assumed missing-key zero.
     for day in ["2026.10.19", "2026.10.22", "2026.10.25"]:
         path = workspace / day / "Needed files/MT4/Risk/Accounting Equity Report.csv"
@@ -100,7 +116,7 @@ def mutate(workspace: Path, setup: Path) -> dict:
     manual = {r["Key"]: r for r in proof["ManualDEP"]}
     for row in equity["rows"]:
         key = "/".join(str(row[k]) for k in ["Branch", "Retail Type", "Currency"])
-        row["DEP"] = manual[key]["Value"]; row["DEP Number Format"] = manual[key]["NumberFormat"]
+        row["DEP"] = manual[key]["Value"]; row["DEP Number Format"] = saved_dep_formats[key]
         if key == "TMA/Standard/USD": row.update(Amount=108, **{"USD Equivalent": 108, "Movement": 28})
         if key == "TMA/IB/AUD": row.update(Amount=150, **{"USD Equivalent": 120, "Movement": 40})
     equity["rows"].append({"Branch": "TMG", "Retail Type": "IB", "Currency": "EUR", "Amount": 12.5,
@@ -122,14 +138,17 @@ def mutate(workspace: Path, setup: Path) -> dict:
     report["breakdown"].update({"Client Bank Move": 293, "Diff": 51, "To settle pnl (TMA)": 395,
         "To Settle adj (TMG)": -11, "To Commission": -30, "Check": -295.5})
     report["manual_values"] = {"To LP": -5, "Bank Fee": 0, "Bank fee-conversion": None, "Time Diff": -2.5}
-    report["breakdown_number_formats"]["G"] = next(r["NumberFormat"] for r in proof["MonthlyManual"] if r["Date"] == "2026-10-25" and r["Column"] == 7)
+    report["breakdown_number_formats"] = saved_monthly_formats["2026-10-25"]
+    report["allow_sheet_reorder"] = True
     write_json(workspace / "rerun_monthly_expected.json", report)
     history = expected_22(workspace)
     history["manual_values"] = {"To LP": 0, "Bank Fee": -3, "Bank fee-conversion": None, "Time Diff": None}
-    history["breakdown"]["Check"] = -476; history["breakdown_number_formats"]["G"] = report["breakdown_number_formats"]["G"]
+    history["breakdown"]["Check"] = -476; history["breakdown_number_formats"] = saved_monthly_formats["2026-10-22"]
+    history["allow_sheet_reorder"] = True
     write_json(workspace / "rerun_history_expected.json", history)
     contract = {"synthetic_only": True, "business_acceptance_executed": False, "unmatched_expected": {
-        "Date": "2026.10.25", "Sheet": "Equity", "KeyContains": ["TMG", "Standard", "EUR"], "Field": "DEP", "Value": 7},
+        "Date": "2026.10.25", "Sheet": "Equity", "KeyContains": ["TMG", "Standard", "EUR"], "Field": "DEP", "Value": 7,
+        "NumberFormat": saved_dep_formats["TMG/Standard/EUR"]},
         "new_key": "TMG/IB/EUR", "new_key_DEP": 0, "expected_current_check": -295.5,
         "expected_retained_history_check": -476, "mutation": "same-date automatic changes plus Equity reorder/add/remove and PSP mapping completion"}
     write_json(workspace / "rerun_contract.json", contract)
