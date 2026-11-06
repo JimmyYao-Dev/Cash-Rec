@@ -13,8 +13,8 @@ internal static class MonthlyWorkbookWriter
     {
         using var book = existingPath == null ? NewWorkbook() : new XLWorkbook(existingPath);
         Validate(book);
-        SetProperty(book, "CashRecMonthlyStage", "Balances");
-        SetProperty(book, "CashRecMonthlyStageComplete", report.BalancesComplete ? "1" : "0");
+        SetProperty(book, "CashRecMonthlyStage", MonthlyStage.Current);
+        SetProperty(book, "CashRecMonthlyStageComplete", report.StageComplete ? "1" : "0");
         SetProperty(book, "CashRecVersion", AppVersion.Current);
         var rows = MonthlyLayout.Sheets.ToDictionary(name => name, name => FindOrAddDate(book.Worksheet(name), report.Date));
         var caches = new Dictionary<string, Dictionary<string, decimal>>();
@@ -36,7 +36,7 @@ internal static class MonthlyWorkbookWriter
                 var field = columns[column].Field;
                 var cell = sheet.Cell(number, column + 1);
                 // A missing previous value must also remove a previously saved DIFF.
-                if (name != "Break down" && IsBalanceField(field))
+                if (name != "Break down" && IsAutomaticField(field))
                 {
                     cell.Clear(XLClearOptions.Contents);
                     caches["xl/worksheets/sheet" + sheet.Position + ".xml"].Remove(Address(cell));
@@ -58,7 +58,8 @@ internal static class MonthlyWorkbookWriter
         WorkbookWriter.PersistFormulaValues(temporaryPath, caches);
     }
 
-    static bool IsBalanceField(string field) => field == "SETTLE PNL"
+    static bool IsAutomaticField(string field) => field == "SETTLE PNL"
+        || MonthlyFlowCalculator.Fields.Contains(field)
         || MonthlyBalanceCalculator.BalanceFields.Contains(field)
         || MonthlyBalanceCalculator.BalanceFields.Any(balance => field == balance + " DIFF");
 

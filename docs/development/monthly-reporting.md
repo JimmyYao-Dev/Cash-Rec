@@ -1,12 +1,12 @@
-# Monthly reporting: balance stage
+# Monthly reporting: balance and client-flow stages
 
-Issue #9 adds an independent monthly workbook after the existing daily four-sheet output. Version 0.2.0 keeps both artifacts and their status separate. It does not implement client-flow totals, Breakdown calculations, Check, cross-month rollover or range processing from later tickets.
+Issue #9 adds an independent monthly workbook after the existing daily four-sheet output; Issue #10 adds signed client-flow totals. Version 0.2.0 keeps both artifacts and their status separate. It does not implement Breakdown calculations, Check, cross-month rollover or range processing from later tickets.
 
 ## Entry and output contract
 
 The installed GUI retains `workspaceBox`, `businessDatePicker`, `runButton`, `statusText`, `resultLabel` and `openButton`. One report action uses `ReportTaskRunner`. The existing `ReportRunner.Run` remains the daily calculation entry for developer regressions; it is not the business acceptance seam.
 
-The monthly file is `<date-folder-parent>/monthly/CashRec_Breakdown_yyyy.MM.xlsx`, including when the user directly selects a date folder. Sheets are TMA, TMG, Total and Break down. A task diagnostic has `DailyOutput`, `MonthlyOutput`, `MonthlyStage="Balances"`, `MonthlyStageComplete`, `DailyComplete`, `Complete` and `Diagnostics`. `Complete` remains false at this intermediate stage. The monthly artifact alone does not establish full reconciliation completion.
+The monthly file is `<date-folder-parent>/monthly/CashRec_Breakdown_yyyy.MM.xlsx`, including when the user directly selects a date folder. Sheets are TMA, TMG, Total and Break down. A task diagnostic has `DailyOutput`, `MonthlyOutput`, `MonthlyStage="Flows"`, `MonthlyStageComplete`, `DailyComplete`, `Complete` and `Diagnostics`. Stage completion includes the balance prerequisites and current flow calculation; unavailable previous balance/Pending still leaves the stage incomplete. `Complete` remains false at this intermediate stage. The monthly artifact alone does not establish full reconciliation completion.
 
 Calculation, preparation and replacement are separate modules. `MonthlyReportRunner.Prepare` creates a disposable prepared output; `Commit` handles its backup and replacement. Task-level atomic daily/monthly replacement and complete manual-value lifecycle remain later-ticket work. A monthly failure explicitly leaves the daily result identified separately; it is not reported as a complete pair.
 
@@ -21,6 +21,19 @@ PSP Pending reads the matching dated `Needed files/PSP+BANK/BANK BD.xlsx`, works
 The summary has no intrinsic row date. Its prepared date folder binds the snapshot to D, and provenance records the path, business date, row and SHA256. If an optional `CashRecSnapshotDate` property is present it must agree. File modification times are not substituted for business dates. A historical run never reads a later date folder as a fallback. Users remain responsible for putting the correct prepared snapshot in each dated folder.
 
 The previous Pending file must belong to the exact previous balance date. Missing or unreliable previous Pending leaves Pending DIFF blank; it does not fall back to today's cumulative values or a different previous date. Local provenance is stored under `monthly/.cashrec`.
+
+## Signed client flows
+
+All flow filters use the report's prepared business date and Branch. The original CSV transaction dates are retained as provenance and are not filtered a second time.
+
+- PSP DEP/WITH: Source=Transaction reports, Type=PSP, with Transaction Type=PSP Dep or PSP WITH respectively.
+- NET PSP: signed PSP DEP plus PSP WITH. A negative withdrawal is not reversed or subtracted again.
+- NET BW: Source=Transaction reports, Type=Retail and Exchange Type=MT4 BW. Other Retail fees and transfers are excluded.
+- NET WS: Source=BANK BD and Type=Wholesale. MT4 and similarly named PSP transactions cannot enter this total.
+
+Every amount uses already calculated USD Equivalent. Original-currency Amount is not substituted or converted again. Distinct source records with equal amounts are added separately; zero records remain in the base detail. A valid empty group is numeric zero. A selected row missing a reliable USD value remains an error.
+
+The flow calculator streams existing transaction rows in one pass with fixed-size group sums and periodic progress, without copying or grouping the entire transaction list. Local provenance records matched counts and exact filters. NET PSP retains a field-bound addition formula; each Total flow retains a TMA+TMG formula, all with engine-supplied caches. Entity columns B:F hold PSP DEP, PSP WITH, NET PSP, NET BW and NET WS. No monthly Breakdown values are added by this ticket.
 
 ## SETTLE PNL evidence and semantics
 
@@ -56,4 +69,4 @@ Break down retains its original single header row and all 16 columns. This stage
 
 Developer regressions assist diagnosis. Business acceptance must start through the installed GUI and use independent expected outputs. Formula text and populated caches do not replace actual Excel editing/recalculation tests when later tickets add those manual interaction requirements.
 
-`CashRec.MonthlyRegression` accepts a synthetic monthly fixture and verifies balances, full-set changes, signed settlement categories, 14 independent compound-description/priority cases, field layout, formats, historical snapshots and missing-cache handling. A private developer mode compares the C# adapter to source-SHA-bound row/type vectors and emits counts only; real descriptions and records are never committed. The installed candidate still requires GUI acceptance before Issue #9 is complete.
+`CashRec.MonthlyRegression` accepts a synthetic monthly fixture and verifies balances, flows, full-set changes, signed settlement categories, 14 independent compound-description/priority cases, field layout, formats, historical snapshots and missing-cache handling. `CashRec.FlowRegression` separately checks source/type/date isolation, signs, same-amount and zero records, USD basis, formulas and invalid consumed values. A private developer mode compares the C# adapter to source-SHA-bound row/type vectors and emits counts only; real descriptions and records are never committed. The installed flow candidate requires its own GUI acceptance before Issue #10 is complete.

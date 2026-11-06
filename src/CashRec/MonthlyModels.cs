@@ -2,6 +2,11 @@ namespace CashRec;
 
 public sealed record MonthlyFormula(string Expression, decimal CalculatedValue);
 
+public static class MonthlyStage
+{
+    public const string Current = "Flows";
+}
+
 public sealed class MonthlyReport(DateTime date)
 {
     public DateTime Date { get; } = date.Date;
@@ -12,6 +17,8 @@ public sealed class MonthlyReport(DateTime date)
     };
     public List<Diagnostic> Diagnostics { get; } = [];
     public bool BalancesComplete { get; internal set; }
+    public bool FlowsComplete { get; internal set; }
+    public bool StageComplete => BalancesComplete && FlowsComplete;
     public List<object> Provenance { get; } = [];
 }
 
