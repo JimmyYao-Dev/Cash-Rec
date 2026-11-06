@@ -8,6 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 
 from verify_outputs import compare, number
 
@@ -150,9 +151,32 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
                 compare(breakdown.cell(row, column).value, wanted, "Break down " + field)
                 if wanted is None and formula_breakdown.cell(row,column).value is not None:
                     raise AssertionError("Unavailable Breakdown client change/Diff must remain truly blank")
-            for column in (7,12,13,14,15):
-                if formula_breakdown.cell(row, column).value is not None:
-                    raise AssertionError("A first-run manual/Error field is not truly blank")
+            total_row=rows_by_date(values["Total"],3)[target]
+            total_columns=columns_by_group(formulas["Total"])
+            sources={2:[("BANK","Settle")],3:[("DIFF",field) for field in BALANCE_FIELDS[:-1]],
+                     4:[("MT4","NET PSP"),("MT4","NET BW")],5:[("MT4","NET WS")]}
+            for column,fields in sources.items():
+                if column==3 and missing_client_diff:continue
+                cell=formula_breakdown.cell(row,column)
+                if cell.data_type!="f":raise AssertionError("Breakdown field must retain a linked formula")
+                expression=str(cell.value).upper().replace("'","").replace("$","").replace(" ","")
+                refs=re.findall(r"TOTAL!([A-Z]+[0-9]+)",expression)
+                wanted=[get_column_letter(grouped_column(total_columns,group,field))+str(total_row) for group,field in fields]
+                rest=re.sub(r"TOTAL![A-Z]+[0-9]+","",expression).replace("SUM","")
+                if sorted(refs)!=sorted(wanted) or re.search(r"[^=+(),]",rest):
+                    raise AssertionError("Breakdown formula does not bind only the required same-day business fields")
+            for current in dates.values():
+                cell=formula_breakdown.cell(current,6)
+                if cell.value is None:continue
+                wanted=f"=C{current}-D{current}-E{current}"
+                if cell.data_type!="f" or str(cell.value).replace("$","").replace(" ","")!=wanted:
+                    raise AssertionError("Breakdown Diff must retain the correct relative row formula")
+            for column,field in [(7,"To LP"),(12,"Bank Fee"),(13,"Bank fee-conversion"),(14,"Time Diff"),(15,"Error")]:
+                cell = formula_breakdown.cell(row,column)
+                wanted = None if column==15 else oracle.get("manual_values",{}).get(field)
+                compare(cell.value,wanted,"Break down manual/Error " + field)
+                if cell.data_type=="f" or (wanted is not None and (cell.data_type!="n" or isinstance(cell.value,bool))):
+                    raise AssertionError("Manual/Error fields must retain actual blank or numeric input types")
         if stage == "check":
             for column, field in [(8,"To settle pnl (TMA)"),(9,"To Settle adj (TMG)"),(10,"To Settle (WS)"),(11,"To Commission"),(16,"Check")]:
                 compare(breakdown.cell(row, column).value, oracle["breakdown"][field], "Break down " + field)
