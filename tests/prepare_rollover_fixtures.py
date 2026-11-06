@@ -133,8 +133,11 @@ def seed_source(workspace: Path, edited: Path, scenario: str) -> dict:
                 if hasattr(row[0].value, "strftime")} for sheet in source}
             last_row = date_rows["Break down"]["2026-10-31"]
             oracle = load(workspace/"rollover_2026-10-31_monthly_expected.json")
-            oracle["manual_values"] = {"To LP": -5, "Bank Fee": 0, "Bank fee-conversion": None, "Time Diff": -2.5}
-            oracle["breakdown"]["Check"] = -587.5
+            oracle["manual_values"] = {field: source["Break down"].cell(last_row, column).value
+                for column, field in [(7, "To LP"), (12, "Bank Fee"), (13, "Bank fee-conversion"), (14, "Time Diff")]}
+            if any(value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool)) for value in oracle["manual_values"].values()):
+                raise ValueError("Owned-Excel manual source must contain actual numbers or true blanks.")
+            oracle["breakdown"]["Check"] = -595-sum(value or 0 for value in oracle["manual_values"].values())
             oracle["breakdown_number_formats"] = {column: source["Break down"][f"{column}{last_row}"].number_format for column in ["G", "L", "M", "N", "O", "P"]}
             oracle["manual_cell_styles"] = {field: cell_style_signature(source["Break down"].cell(last_row, column))
                 for column, field in [(7, "To LP"), (12, "Bank Fee"), (13, "Bank fee-conversion"), (14, "Time Diff")]}
