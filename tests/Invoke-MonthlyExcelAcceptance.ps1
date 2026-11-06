@@ -3,7 +3,7 @@ param(
  [Parameter(Mandatory=$true)][string]$Workbook,
  [Parameter(Mandatory=$true)][string]$Oracle,
  [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
- [ValidateSet('ValidateBalances','ValidateFlows','ValidateManualArea','EditCheck')][string]$Mode='ValidateBalances'
+ [ValidateSet('ValidateBalances','ValidateFlows','ValidateManualArea','SeedLegacyManual','EditCheck')][string]$Mode='ValidateBalances'
 )
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Drawing
@@ -136,9 +136,11 @@ try{
   }
   $sheet=$book.Worksheets.Item('TMA');$row=Find-DateRow $sheet $date 3
   $sheet.Activate();$sheet.Cells.Item($row, $(if($Mode -eq 'ValidateFlows'){4}else{14})).Select()|Out-Null
- }elseif($Mode -eq 'ValidateManualArea'){
+ }elseif($Mode -in @('ValidateManualArea','SeedLegacyManual')){
   $sheet=$book.Worksheets.Item('Break down');$row=Find-DateRow $sheet $date 2
-  foreach($pair in @(@(2,'Settle Bal'),@(3,'Client Bank Move'),@(4,'MT4'),@(5,'WS DEP'),@(6,'Diff'))){[void](Check-Value $sheet $row $pair[0] $oracleData.breakdown.($pair[1]) ('Break down '+$pair[1]))}
+  if($Mode -eq 'ValidateManualArea'){
+   foreach($pair in @(@(2,'Settle Bal'),@(3,'Client Bank Move'),@(4,'MT4'),@(5,'WS DEP'),@(6,'Diff'))){[void](Check-Value $sheet $row $pair[0] $oracleData.breakdown.($pair[1]) ('Break down '+$pair[1]))}
+  }else{$result.SetupOnly='Seed existing historical manual values; no Breakdown or Check business acceptance claimed.'}
   $before=@{}
   foreach($column in @(7,12,13,14,15)){
    $state=Cell-State $sheet $row $column
