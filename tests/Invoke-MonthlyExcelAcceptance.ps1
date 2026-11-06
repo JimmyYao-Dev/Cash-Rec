@@ -3,7 +3,8 @@ param(
  [Parameter(Mandatory=$true)][string]$Workbook,
  [Parameter(Mandatory=$true)][string]$Oracle,
  [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
- [ValidateSet('ValidateBalances','ValidateFlows','ValidateManualArea','SeedLegacyManual','EditCheck')][string]$Mode='ValidateBalances'
+ [ValidateSet('ValidateBalances','ValidateFlows','ValidateManualArea','SeedLegacyManual','EditCheck')][string]$Mode='ValidateBalances',
+ [Nullable[double]]$FinalConversionValue
 )
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Drawing
@@ -200,6 +201,38 @@ try{
   $result.Cleared=Cell-State $sheet $row 7
   $sheet.Cells.Item($row,7).Value2=[double]-5;$excel.CalculateFull()
   [void](Check-Value $sheet $row 16 $negativeExpected 'Final Check')
+  # Each original manual field must independently exercise every permitted input type.
+  $standard=@{7=-5;12=0;13=$null;14=-2.5}
+  $negativeValues=@{7=-3.25;12=-4.5;13=-6.75;14=-8.25}
+  $columnCases=@()
+  foreach($column in @(7,12,13,14)){
+   $steps=@()
+   foreach($step in @(@{Name='Negative';Value=$negativeValues[$column]},@{Name='Zero';Value=0},@{Name='Blank';Value=$null})){
+    $cell=$sheet.Cells.Item($row,$column)
+    if($null -eq $step.Value){$cell.ClearContents()|Out-Null}else{$cell.Value2=[double]$step.Value}
+    $excel.CalculateFull();$wantedCheck=$automaticCheck
+    foreach($manualColumn in @(7,12,13,14)){
+     $manualInputValue=if($manualColumn -eq $column){$step.Value}else{$standard[$manualColumn]}
+     if($null -ne $manualInputValue){$wantedCheck-=[double]$manualInputValue}
+    }
+    [void](Check-Value $sheet $row 16 $wantedCheck ('Check after independent '+$manualFields[$column]+' '+$step.Name))
+    $state=Cell-State $sheet $row $column
+    if($state.HasFormula -or $state.NumberFormat -ne $before[[string]$column].NumberFormat){throw 'Independent manual edit changed its formula/type/format contract.'}
+    if($null -eq $step.Value){if($null -ne $state.Value){throw 'Independent manual clear did not leave a true blank.'}}
+    else{Assert-Number $state.Value $step.Value 'Independent manual numeric input'}
+    $steps+=@{InputKind=$step.Name;State=$state;ExpectedCheck=$wantedCheck;ActualCheck=$sheet.Cells.Item($row,16).Value2}
+   }
+   if($null -eq $standard[$column]){$sheet.Cells.Item($row,$column).ClearContents()|Out-Null}else{$sheet.Cells.Item($row,$column).Value2=[double]$standard[$column]}
+   $excel.CalculateFull();[void](Check-Value $sheet $row 16 $negativeExpected 'Restored standard manual vector Check')
+   $columnCases+=@{Column=$column;Field=$manualFields[$column];Steps=$steps}
+  }
+  $result.IndependentManualColumns=$columnCases
+  if($null -ne $FinalConversionValue){
+   $sheet.Cells.Item($row,13).Value2=[double]$FinalConversionValue;$excel.CalculateFull()
+   $finalExpected=$negativeExpected-[double]$FinalConversionValue
+   [void](Check-Value $sheet $row 16 $finalExpected 'Check after final explicit conversion input')
+   $result.FinalConversion=@{State=(Cell-State $sheet $row 13);ExpectedCheck=$finalExpected;ActualCheck=$sheet.Cells.Item($row,16).Value2;Purpose='Saved actual-Excel manual input for subsequent GUI preservation checks'}
+  }
   foreach($column in @(7,12,13,14,15)){if([string]$sheet.Cells.Item($row,$column).NumberFormat -ne $before[[string]$column].NumberFormat){throw 'Actual Excel edit changed a manual cell format.'}}
   $sheet.Activate();$sheet.Cells.Item($row,7).Select()|Out-Null
  }

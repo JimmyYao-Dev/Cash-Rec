@@ -47,11 +47,12 @@ def validate_compatibility_prefixes(data: bytes) -> None:
         else: scopes.pop()
 
 
-def initialize(workspace: Path, partial: bool = False) -> dict:
+def initialize(workspace: Path, partial: bool = False, include_month_start: bool = False) -> dict:
     monthly.generate(workspace, "good")
     base = load(workspace / "monthly_expected_comment_policy.json")
-    stocks = {**STOCKS, **({"2026-11-01": (120, 210)} if partial else {})}
+    stocks = {**STOCKS, **({"2026-11-01": (120, 210)} if partial or include_month_start else {})}
     for date, (tma, tmg) in stocks.items():
+        prior_date = "2026-11-01" if date == "2026-11-02" and include_month_start else PRIOR[date]
         day = datetime.fromisoformat(date); needed = workspace / day.strftime("%Y.%m.%d") / "Needed files"
         shutil.copytree(workspace / "2026.10.25/Needed files", needed, dirs_exist_ok=True)
         path = needed / "Rate/VFSC Rate.xlsx"; book = load_workbook(path)
@@ -66,18 +67,18 @@ def initialize(workspace: Path, partial: bool = False) -> dict:
         monthly.PENDING[day.strftime("%Y.%m.%d")] = {"TMA": (1000, 1000-tma, tma), "TMG": (2000, 2000-tmg, tmg)}
         monthly.pending_snapshot(needed / "PSP+BANK/BANK BD.xlsx", day, "good")
         daily = load(workspace / "expected_comment_policy.json")
-        daily.update(business_date=date, previous_date=PRIOR[date])
+        daily.update(business_date=date, previous_date=prior_date)
         for name in ["Equity", "Bank", "PSP"]:
             table = daily["sheets"][name]
             for row in table["rows"]:
-                row["Prev USD Equivalent"] = row["USD Equivalent"]; row["Movement"] = 0
+                row["Prev USD Equivalent"] = row["USD Equivalent"]; row["Movement"] = 0; row["Previous Date"] = prior_date
             table["total_previous_usd"] = table["total_usd"]; table["total_movement"] = 0
         daily["manual_formula_case"]["expected_after_excel_recalculation"] = {"Movement": 0, "PNL": -30}
         write(workspace / ("rollover_"+date+"_daily_expected.json"), daily)
-        report = copy.deepcopy(base); report.update(business_date=date, previous_date=PRIOR[date])
+        report = copy.deepcopy(base); report.update(business_date=date, previous_date=prior_date)
         report["expected_global_classification"] = CLASSIFICATION
         report["previous_balances"] = copy.deepcopy(base["balances"])
-        previous = stocks.get(PRIOR[date], (100, 200))
+        previous = stocks.get(prior_date, (100, 200))
         for values, amounts in [(report["balances"], (tma, tmg)), (report["previous_balances"], previous)]:
             values["TMA"]["PSP Pending"] = amounts[0]; values["TMG"]["PSP Pending"] = amounts[1]
             values["Total"]["PSP Pending"] = sum(amounts)
@@ -102,7 +103,7 @@ def initialize(workspace: Path, partial: bool = False) -> dict:
     write(workspace / monthly.MARKER, marker)
     result = {"synthetic_only": True, "preparation_only": True, "business_acceptance_executed": False,
               "dates_added": list(stocks), "partial_initialization": partial,
-              "monthly_checks": {"2026-10-31": -595, "2026-11-02": -545, "2026-11-03": -580, **({"2026-11-01": -565} if partial else {})}}
+              "monthly_checks": {date: load(workspace/("rollover_"+date+"_monthly_expected.json"))["breakdown"]["Check"] for date in stocks}}
     write(workspace / "rollover_fixture_contract.json", result)
     return result
 
@@ -132,8 +133,11 @@ def seed_source(workspace: Path, edited: Path, scenario: str) -> dict:
                 if hasattr(row[0].value, "strftime")} for sheet in source}
             last_row = date_rows["Break down"]["2026-10-31"]
             oracle = load(workspace/"rollover_2026-10-31_monthly_expected.json")
-            oracle["manual_values"] = {"To LP": -5, "Bank Fee": 0, "Bank fee-conversion": None, "Time Diff": -2.5}
-            oracle["breakdown"]["Check"] = -587.5
+            oracle["manual_values"] = {field: source["Break down"].cell(last_row, column).value
+                for column, field in [(7, "To LP"), (12, "Bank Fee"), (13, "Bank fee-conversion"), (14, "Time Diff")]}
+            if any(value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool)) for value in oracle["manual_values"].values()):
+                raise ValueError("Owned-Excel manual source must contain actual numbers or true blanks.")
+            oracle["breakdown"]["Check"] = -595-sum(value or 0 for value in oracle["manual_values"].values())
             oracle["breakdown_number_formats"] = {column: source["Break down"][f"{column}{last_row}"].number_format for column in ["G", "L", "M", "N", "O", "P"]}
             oracle["manual_cell_styles"] = {field: cell_style_signature(source["Break down"].cell(last_row, column))
                 for column, field in [(7, "To LP"), (12, "Bank Fee"), (13, "Bank fee-conversion"), (14, "Time Diff")]}
@@ -178,11 +182,11 @@ def seed_source(workspace: Path, edited: Path, scenario: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
-    parser.add_argument("--phase", choices=["init", "init-partial", "restore-prior", "seed-source"], required=True)
+    parser.add_argument("--phase", choices=["init", "init-partial", "init-range", "restore-prior", "seed-source"], required=True)
     parser.add_argument("--edited-workbook", type=Path)
     parser.add_argument("--scenario", choices=["good", "missing-month", "empty-baseline", "inconsistent-baseline"], default="good")
     args = parser.parse_args(); workspace = args.workspace.resolve()
-    if args.phase in {"init", "init-partial"}: result = initialize(workspace, args.phase == "init-partial")
+    if args.phase in {"init", "init-partial", "init-range"}: result = initialize(workspace, args.phase == "init-partial", args.phase == "init-range")
     elif args.phase == "restore-prior":
         if not load(workspace/monthly.MARKER).get("synthetic_only"): raise ValueError("Only marked synthetic prior inputs may be restored.")
         dates = []
