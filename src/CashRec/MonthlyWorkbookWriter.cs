@@ -25,6 +25,9 @@ internal static class MonthlyWorkbookWriter
         {
             SetProperty(book, "CashRecMonthlyBaselineDate", rollover.Date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture));
             SetProperty(book, "CashRecMonthlyBaselineState", "Initialized");
+            // Resolve already verified this exact source date under the current policy.
+            // A late carry into an existing workbook must carry its provenance too.
+            SetProperty(book, ReportPolicy.ClassificationDateProperty(rollover.Date), ReportPolicy.Classification);
         }
         else if (source == null)
             SetProperty(book, "CashRecMonthlyBaselineState", report.PreviousDate == null

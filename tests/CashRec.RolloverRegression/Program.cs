@@ -100,6 +100,10 @@ static void CheckLateBasis(string fixture, string prepared, bool monthFirst)
     Assert(repaired.Complete, Diagnostics(repaired));
     CheckDates(repaired.MonthlyOutput!, monthFirst ? [new DateTime(2026, 10, 31), date] : [new DateTime(2026, 10, 31), date, next]);
     using var result = new XLWorkbook(repaired.MonthlyOutput!);
+    Assert(result.CustomProperties.Single(property => property.Name == ReportPolicy.ClassificationDateProperty(new DateTime(2026, 10, 31))).Value.ToString() == ReportPolicy.Classification
+        && result.CustomProperties.Single(property => property.Name == "CashRecClassification").Value.ToString() == ReportPolicy.Classification,
+        "A verified late-carried source date retains its policy marker and cannot produce a spurious Mixed warning");
+    Assert(!repaired.Diagnostics.Any(diagnostic => diagnostic.Source == "历史交易分类"), "No current-policy carry is mislabeled as unrecomputed history");
     var manual = result.Worksheet("Break down").Cell(DateRow(result.Worksheet("Break down"), date), 7);
     Assert(manual.GetDouble() == -4 && manual.Style.NumberFormat.Format == "0.00000", "Adding a late baseline preserves existing new-month manual input and format");
 }
