@@ -1,0 +1,264 @@
+[CmdletBinding()]
+param(
+ [Parameter(Mandatory=$true)][string]$Workbook,
+ [Parameter(Mandatory=$true)][string]$Oracle,
+ [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
+ [ValidateSet('ValidateBalances','ValidateFlows','ValidateManualArea','SeedLegacyManual','EditCheck')][string]$Mode='ValidateBalances',
+ [Nullable[double]]$FinalConversionValue
+)
+$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Drawing
+if(-not ('CashRecMonthlyExcelWindow' -as [type])){
+ Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class CashRecMonthlyExcelWindow {
+ [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+ [StructLayout(LayoutKind.Sequential)] public struct Rect {public int Left,Top,Right,Bottom;}
+ [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd,out Rect rect);
+ [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd,IntPtr hdc,uint flags);
+}
+'@
+}
+function Assert-Number($Actual,$Expected,$Context){
+ if($null -eq $Actual -or $Actual -is [string] -or $Actual -is [bool] -or [math]::Abs([double]$Actual-[double]$Expected) -gt 0.00000001){throw ($Context+' differs from the independent synthetic expectation.')}
+}
+function Normalize-Header($Value){return ([regex]::Replace([string]$Value,'[^A-Za-z0-9]','')).ToLowerInvariant()}
+function Find-DateRow($Sheet,[string]$Date,[int]$First){
+ $found=0
+ for($row=$First;$row -le $Sheet.UsedRange.Rows.Count;$row++){
+  $value=$Sheet.Cells.Item($row,1).Value2
+  if($null -eq $value){continue}
+  $day=$null
+  if($value -is [double]){try{$day=[datetime]::FromOADate($value).ToString('yyyy-MM-dd')}catch{}}
+  else{try{$day=[datetime]::ParseExact(([string]$value).Replace('.','-'),'yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture).ToString('yyyy-MM-dd')}catch{}}
+  if($day -eq $Date){if($found){throw 'Duplicate monthly business date found in actual Excel.'};$found=$row}
+ }
+ if(-not $found){throw 'Selected monthly business date not found in actual Excel.'}
+ return $found
+}
+function Grouped-Headers($Sheet){
+ $headers=@{};$group=''
+ for($column=1;$column -le $Sheet.UsedRange.Columns.Count;$column++){
+  $top=$Sheet.Cells.Item(1,$column)
+  $value=$top.MergeArea.Cells.Item(1,1).Value2
+  if($value){$group=Normalize-Header $value}
+  $field=Normalize-Header $Sheet.Cells.Item(2,$column).Value2
+  if($group -and $field){$key=$group+'/'+$field;if($headers.ContainsKey($key)){throw 'Duplicate grouped header in actual Excel.'};$headers[$key]=$column}
+ }
+ return $headers
+}
+function Check-Value($Sheet,[int]$Row,[int]$Column,$Wanted,$Context){
+ if(-not $Column){throw ($Context+' column missing in actual Excel.')}
+ $value=$Sheet.Cells.Item($Row,$Column).Value2
+ Assert-Number $value $Wanted $Context
+ return $value
+}
+function Capture-OwnedWindow($Excel,[string]$Path){
+ Start-Sleep -Milliseconds 300
+ $rect=[CashRecMonthlyExcelWindow+Rect]::new()
+ if(-not[CashRecMonthlyExcelWindow]::GetWindowRect([IntPtr]$Excel.Hwnd,[ref]$rect)){throw 'Owned Excel window rectangle unavailable.'}
+ $bitmap=[Drawing.Bitmap]::new($rect.Right-$rect.Left,$rect.Bottom-$rect.Top)
+ $graphics=[Drawing.Graphics]::FromImage($bitmap)
+ try{
+  $dc=$graphics.GetHdc()
+  try{$captured=[CashRecMonthlyExcelWindow]::PrintWindow([IntPtr]$Excel.Hwnd,$dc,2)}finally{$graphics.ReleaseHdc($dc)}
+  if(-not $captured){throw 'Owned Excel capture failed; desktop capture will not be substituted.'}
+  $stream=[IO.MemoryStream]::new()
+  try{$bitmap.Save($stream,[Drawing.Imaging.ImageFormat]::Png);[IO.File]::WriteAllBytes($Path,$stream.ToArray())}finally{$stream.Dispose()}
+ }finally{$graphics.Dispose();$bitmap.Dispose()}
+}
+function Cell-State($Sheet,[int]$Row,[int]$Column){
+ $cell=$Sheet.Cells.Item($Row,$Column)
+ return @{Value=$cell.Value2;HasFormula=[bool]$cell.HasFormula;NumberFormat=[string]$cell.NumberFormat;ValueType=if($null -eq $cell.Value2){'Null'}else{$cell.Value2.GetType().FullName}}
+}
+$Workbook=(Resolve-Path -LiteralPath $Workbook).Path
+$oracleData=Get-Content -LiteralPath $Oracle -Raw -Encoding UTF8|ConvertFrom-Json
+if(-not $oracleData.synthetic_only){throw 'Only an independently specified synthetic oracle may be used.'}
+New-Item -ItemType Directory -Force -Path $EvidenceDirectory|Out-Null
+$EvidenceDirectory=(Resolve-Path -LiteralPath $EvidenceDirectory).Path
+$sourceHash=(Get-FileHash -LiteralPath $Workbook -Algorithm SHA256).Hash
+$existing=@(Get-Process EXCEL -ErrorAction SilentlyContinue|ForEach-Object Id)
+$excel=$null;$book=$null;$sheet=$null;$owned=$false
+$result=[ordered]@{Entry='Actual owned installed Excel application';Mode=$Mode;Workbook=$Workbook;Oracle=$Oracle;Passed=$false;ExistingExcelPids=$existing}
+try{
+ $excel=New-Object -ComObject Excel.Application
+ [uint32]$createdPid=0
+ [void][CashRecMonthlyExcelWindow]::GetWindowThreadProcessId([IntPtr]$excel.Hwnd,[ref]$createdPid)
+ $owned=$existing -notcontains [int]$createdPid
+ $result.ExcelPid=$createdPid;$result.OwnNewInstance=$owned
+ if(-not $owned){throw 'Excel did not create a new isolated process; no existing instance will be changed or closed.'}
+ $excel.Visible=$true;$excel.WindowState=-4137;$excel.DisplayAlerts=$false;$excel.AskToUpdateLinks=$false
+ $book=$excel.Workbooks.Open($Workbook,0,$false)
+ $excel.CalculateFull()
+ $date=[string]$oracleData.business_date
+ if($Mode -in @('ValidateBalances','ValidateFlows')){
+  $checks=@()
+  foreach($entity in @('TMA','TMG','Total')){
+   $sheet=$book.Worksheets.Item($entity)
+   $row=Find-DateRow $sheet $date 3
+   $headers=Grouped-Headers $sheet
+   $record=[ordered]@{Sheet=$entity;BusinessDate=$date;Row=$row;Values=@{}}
+   foreach($field in @('Insto','Retail','Wholesale','PSP','PSP Pending','Settle')){
+    $name=Normalize-Header $field
+    $record.Values['BANK/'+$field]=Check-Value $sheet $row $headers['bank/'+$name] $oracleData.balances.$entity.$field ($entity+' BANK/'+$field)
+    $record.Values['DIFF/'+$field]=Check-Value $sheet $row $headers['diff/'+$name] $oracleData.diffs.$entity.$field ($entity+' DIFF/'+$field)
+   }
+   $record.Values['SETTLE PNL']=Check-Value $sheet $row $headers['bank/settlepnl'] $oracleData.settle_pnl.$entity ($entity+' SETTLE PNL')
+   $checks+=$record
+  }
+  $result.Checks=$checks
+  if($Mode -eq 'ValidateFlows'){
+   $flows=@()
+   foreach($entity in @('TMA','TMG','Total')){
+    $sheet=$book.Worksheets.Item($entity);$row=Find-DateRow $sheet $date 3;$headers=Grouped-Headers $sheet
+    $flow=[ordered]@{Sheet=$entity;Values=@{};Formulas=@{}}
+    foreach($field in @('PSP DEP','PSP WITH','NET PSP','NET BW','NET WS')){
+     $column=$headers['mt4/'+(Normalize-Header $field)]
+     $flow.Values[$field]=Check-Value $sheet $row $column $oracleData.flows.$entity.$field ($entity+' '+$field)
+     $flow.Formulas[$field]=[string]$sheet.Cells.Item($row,$column).Formula
+     if(($field -eq 'NET PSP' -or $entity -eq 'Total') -and -not $sheet.Cells.Item($row,$column).HasFormula){throw 'Monthly net or Total field is not a linked Excel formula.'}
+    }
+    $flows+=$flow
+   }
+   $result.FlowChecks=$flows
+   $sheet=$book.Worksheets.Item('TMA');$row=Find-DateRow $sheet $date 3
+   $totalSheet=$book.Worksheets.Item('Total');$totalRow=Find-DateRow $totalSheet $date 3
+   $beforeWith=[double]$sheet.Cells.Item($row,3).Value2
+   $sheet.Cells.Item($row,3).Value2=$beforeWith-5;$excel.CalculateFull()
+   $changedNet=Check-Value $sheet $row 4 ([double]$oracleData.flows.TMA.'NET PSP'-5) 'Actual NET PSP after signed withdrawal edit'
+   $changedTotal=Check-Value $totalSheet $totalRow 4 ([double]$oracleData.flows.Total.'NET PSP'-5) 'Actual Total NET PSP after entity edit'
+   $result.FlowFormulaEdit=@{BeforeWithdrawal=$beforeWith;EditedWithdrawal=$sheet.Cells.Item($row,3).Value2;EntityNetAfterEdit=$changedNet;TotalNetAfterEdit=$changedTotal}
+   $sheet.Activate();$sheet.Cells.Item($row,3).Select()|Out-Null
+   Capture-OwnedWindow $excel (Join-Path $EvidenceDirectory '03-excel-monthly-flow-edit.png')
+   $sheet.Cells.Item($row,3).Value2=$beforeWith;$excel.CalculateFull()
+   [void](Check-Value $sheet $row 4 $oracleData.flows.TMA.'NET PSP' 'Restored entity NET PSP')
+   [void](Check-Value $totalSheet $totalRow 4 $oracleData.flows.Total.'NET PSP' 'Restored Total NET PSP')
+  }
+  $sheet=$book.Worksheets.Item('TMA');$row=Find-DateRow $sheet $date 3
+  $sheet.Activate();$sheet.Cells.Item($row, $(if($Mode -eq 'ValidateFlows'){4}else{14})).Select()|Out-Null
+ }elseif($Mode -in @('ValidateManualArea','SeedLegacyManual')){
+  $sheet=$book.Worksheets.Item('Break down');$row=Find-DateRow $sheet $date 2
+  if($Mode -eq 'ValidateManualArea'){
+   foreach($pair in @(@(2,'Settle Bal'),@(3,'Client Bank Move'),@(4,'MT4'),@(5,'WS DEP'),@(6,'Diff'))){[void](Check-Value $sheet $row $pair[0] $oracleData.breakdown.($pair[1]) ('Break down '+$pair[1]))}
+  }else{$result.SetupOnly='Seed existing historical manual values; no Breakdown or Check business acceptance claimed.'}
+  $before=@{}
+  foreach($column in @(7,12,13,14,15)){
+   $state=Cell-State $sheet $row $column
+   if($null -ne $state.Value -or $state.HasFormula){throw 'Monthly manual/Error area is not genuinely blank in actual Excel.'}
+   $before[[string]$column]=$state
+  }
+  $result.Before=$before
+  $sheet.Cells.Item($row,7).Value2=[double]-5
+  $sheet.Cells.Item($row,12).Value2=[double]0
+  $sheet.Cells.Item($row,13).ClearContents()|Out-Null
+  $sheet.Cells.Item($row,14).Value2=[double]-2.5
+  $excel.CalculateFull()
+  $after=@{}
+  foreach($column in @(7,12,13,14,15)){
+   $state=Cell-State $sheet $row $column
+   if($state.NumberFormat -ne $before[[string]$column].NumberFormat -or $state.HasFormula){throw 'Actual manual-area edit changed its format or introduced a formula.'}
+   $after[[string]$column]=$state
+  }
+  Assert-Number $after['7'].Value -5 'Manual To LP negative'
+  Assert-Number $after['12'].Value 0 'Manual Bank Fee numeric zero'
+  Assert-Number $after['14'].Value -2.5 'Manual Time Diff negative'
+  if($null -ne $after['13'].Value -or $null -ne $after['15'].Value){throw 'Cleared conversion/Error cell did not remain blank.'}
+  $result.After=$after;$result.CheckVerification='Not required or claimed by this mode.'
+  $sheet.Activate();$sheet.Cells.Item($row,7).Select()|Out-Null
+ }else{
+  $sheet=$book.Worksheets.Item('Break down');$row=Find-DateRow $sheet $date 2
+  foreach($pair in @(@(6,'Diff'),@(8,'To settle pnl (TMA)'),@(9,'To Settle adj (TMG)'),@(10,'To Settle (WS)'),@(11,'To Commission'),@(16,'Check'))){[void](Check-Value $sheet $row $pair[0] $oracleData.breakdown.($pair[1]) ('Break down '+$pair[1]))}
+  $formula=[string]$sheet.Cells.Item($row,16).Formula
+  $wanted='=F{0}-G{0}-H{0}-I{0}-J{0}-K{0}-L{0}-M{0}-N{0}' -f $row
+  if($formula.Replace('$','').Replace(' ','') -ne $wanted){throw 'Actual Excel Check is not the required relative subtraction formula.'}
+  $before=@{}
+  $manualFields=@{7='To LP';12='Bank Fee';13='Bank fee-conversion';14='Time Diff';15='Error'}
+  foreach($column in @(7,12,13,14,15)){
+   $state=Cell-State $sheet $row $column
+   $field=$manualFields[$column];$initialExpected=$null
+   if($column -ne 15 -and $null -ne $oracleData.manual_values -and $oracleData.manual_values.PSObject.Properties.Name -contains $field){$initialExpected=$oracleData.manual_values.$field}
+   if($state.HasFormula){throw 'Initial monthly manual/Error cell contains a formula.'}
+   if($null -eq $initialExpected){if($null -ne $state.Value){throw 'Initial monthly manual/Error cell is not truly blank in actual Excel.'}}
+   else{Assert-Number $state.Value $initialExpected ('Initial manual '+$field)}
+   $before[[string]$column]=$state
+  }
+  $result.Before=$before;$result.CheckFormula=$formula;$result.InitialCheck=$sheet.Cells.Item($row,16).Value2
+  $sheet.Cells.Item($row,7).Value2=[double]-5
+  $sheet.Cells.Item($row,12).Value2=[double]0
+  $sheet.Cells.Item($row,13).ClearContents()|Out-Null
+  $sheet.Cells.Item($row,14).Value2=[double]-2.5
+  $excel.CalculateFull()
+  $automaticCheck=[double]$oracleData.breakdown.Diff-[double]$oracleData.breakdown.'To settle pnl (TMA)'-[double]$oracleData.breakdown.'To Settle adj (TMG)'-[double]$oracleData.breakdown.'To Settle (WS)'-[double]$oracleData.breakdown.'To Commission'
+  $negativeExpected=$automaticCheck+7.5
+  [void](Check-Value $sheet $row 16 $negativeExpected 'Check after negative/zero/blank manual edits')
+  $result.NegativeEdits=@{ToLP=(Cell-State $sheet $row 7);BankFee=(Cell-State $sheet $row 12);Conversion=(Cell-State $sheet $row 13);TimeDiff=(Cell-State $sheet $row 14);Check=$sheet.Cells.Item($row,16).Value2}
+  $sheet.Cells.Item($row,7).Value2=[double]0;$excel.CalculateFull()
+  [void](Check-Value $sheet $row 16 ($automaticCheck+2.5) 'Check after explicit zero')
+  $result.ExplicitZero=Cell-State $sheet $row 7
+  $sheet.Cells.Item($row,7).ClearContents()|Out-Null;$excel.CalculateFull()
+  [void](Check-Value $sheet $row 16 ($automaticCheck+2.5) 'Check after clearing manual cell')
+  $result.Cleared=Cell-State $sheet $row 7
+  $sheet.Cells.Item($row,7).Value2=[double]-5;$excel.CalculateFull()
+  [void](Check-Value $sheet $row 16 $negativeExpected 'Final Check')
+  # Each original manual field must independently exercise every permitted input type.
+  $standard=@{7=-5;12=0;13=$null;14=-2.5}
+  $negativeValues=@{7=-3.25;12=-4.5;13=-6.75;14=-8.25}
+  $columnCases=@()
+  foreach($column in @(7,12,13,14)){
+   $steps=@()
+   foreach($step in @(@{Name='Negative';Value=$negativeValues[$column]},@{Name='Zero';Value=0},@{Name='Blank';Value=$null})){
+    $cell=$sheet.Cells.Item($row,$column)
+    if($null -eq $step.Value){$cell.ClearContents()|Out-Null}else{$cell.Value2=[double]$step.Value}
+    $excel.CalculateFull();$wantedCheck=$automaticCheck
+    foreach($manualColumn in @(7,12,13,14)){
+     $manualInputValue=if($manualColumn -eq $column){$step.Value}else{$standard[$manualColumn]}
+     if($null -ne $manualInputValue){$wantedCheck-=[double]$manualInputValue}
+    }
+    [void](Check-Value $sheet $row 16 $wantedCheck ('Check after independent '+$manualFields[$column]+' '+$step.Name))
+    $state=Cell-State $sheet $row $column
+    if($state.HasFormula -or $state.NumberFormat -ne $before[[string]$column].NumberFormat){throw 'Independent manual edit changed its formula/type/format contract.'}
+    if($null -eq $step.Value){if($null -ne $state.Value){throw 'Independent manual clear did not leave a true blank.'}}
+    else{Assert-Number $state.Value $step.Value 'Independent manual numeric input'}
+    $steps+=@{InputKind=$step.Name;State=$state;ExpectedCheck=$wantedCheck;ActualCheck=$sheet.Cells.Item($row,16).Value2}
+   }
+   if($null -eq $standard[$column]){$sheet.Cells.Item($row,$column).ClearContents()|Out-Null}else{$sheet.Cells.Item($row,$column).Value2=[double]$standard[$column]}
+   $excel.CalculateFull();[void](Check-Value $sheet $row 16 $negativeExpected 'Restored standard manual vector Check')
+   $columnCases+=@{Column=$column;Field=$manualFields[$column];Steps=$steps}
+  }
+  $result.IndependentManualColumns=$columnCases
+  $result.RestoredStandardCheck=$sheet.Cells.Item($row,16).Value2
+  if($null -ne $FinalConversionValue){
+   $sheet.Cells.Item($row,13).Value2=[double]$FinalConversionValue;$excel.CalculateFull()
+   $finalExpected=$negativeExpected-[double]$FinalConversionValue
+   [void](Check-Value $sheet $row 16 $finalExpected 'Check after final explicit conversion input')
+   $result.FinalConversion=@{State=(Cell-State $sheet $row 13);ExpectedCheck=$finalExpected;ActualCheck=$sheet.Cells.Item($row,16).Value2;Purpose='Saved actual-Excel manual input for subsequent GUI preservation checks'}
+  }
+  foreach($column in @(7,12,13,14,15)){if([string]$sheet.Cells.Item($row,$column).NumberFormat -ne $before[[string]$column].NumberFormat){throw 'Actual Excel edit changed a manual cell format.'}}
+  $sheet.Activate();$sheet.Cells.Item($row,7).Select()|Out-Null
+ }
+ $excel.ActiveWindow.Zoom=85
+ $copy=Join-Path $EvidenceDirectory ('Excel-monthly-'+$Mode+'.xlsx')
+ $book.SaveCopyAs($copy);$result.EditedCopy=$copy
+ $screenshot=Join-Path $EvidenceDirectory ('03-excel-monthly-'+$Mode+'.png')
+ Capture-OwnedWindow $excel $screenshot
+ $result.Screenshot=$screenshot;$result.ScreenshotCapture='PrintWindow on the owned Excel HWND'
+ # Excel can hold a sharing lock even when we only read/recalculate the source.
+ $book.Close($false)
+ [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($book)
+ $book=$null
+ $result.SourceUnchanged=(Get-FileHash -LiteralPath $Workbook -Algorithm SHA256).Hash -eq $sourceHash
+ if(-not $result.SourceUnchanged){throw 'Actual Excel verification modified the original generated workbook.'}
+ $result.Passed=$true
+ [IO.File]::WriteAllText((Join-Path $EvidenceDirectory 'excel-monthly-result.json'),($result|ConvertTo-Json -Depth 15),[Text.UTF8Encoding]::new($false))
+ $result|ConvertTo-Json -Depth 15
+}catch{
+ $result.Error=$_.Exception.Message
+ [IO.File]::WriteAllText((Join-Path $EvidenceDirectory 'excel-monthly-result.json'),($result|ConvertTo-Json -Depth 15),[Text.UTF8Encoding]::new($false))
+ throw
+}finally{
+ if($null -ne $book){try{$book.Close($false)}catch{}}
+ if($owned -and $null -ne $excel){try{$excel.Quit()}catch{}}
+ foreach($item in @($sheet,$book,$excel)){if($null -ne $item){try{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($item)}catch{}}}
+ [GC]::Collect();[GC]::WaitForPendingFinalizers()
+}
