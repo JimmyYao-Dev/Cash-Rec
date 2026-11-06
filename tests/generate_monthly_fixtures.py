@@ -13,7 +13,7 @@ import generate_fixtures as daily
 
 MARKER = ".cashrec-monthly-test-fixture.json"
 DATES = [datetime(2026, 10, 19), daily.PREVIOUS, daily.CURRENT]
-SCENARIOS = ("good", "no-previous", "pending-uncached", "pending-wrong-total", "pending-duplicate", "pending-missing-entity", "flow-source-collision", "flows-mixed")
+SCENARIOS = ("good", "no-previous", "pending-uncached", "pending-wrong-total", "pending-duplicate", "pending-missing-entity", "flow-source-collision", "flows-mixed", "comment-keywords")
 PENDING = {
     "2026.10.19": {"TMA": (800, 750, 50), "TMG": (1700, 1580, 120)},
     "2026.10.22": {"TMA": (900, 820, 80), "TMG": (1800, 1650, 150)},
@@ -29,6 +29,18 @@ PRIORITY_CASES = [
     ("Synthetic psp settlement override", "psp settle fee", 306, "PSP Settle In", "TMA"),
     ("Synthetic ordinary movement", "internal tf", 307, "Bank TF", "TMA"),
     ("Synthetic deposit withdrawal priority", "dep with", -308, "BW WD", "TMA"),
+]
+COMMENT_KEYWORD_CASES = [
+    ("No-tf posting instruction", "memo", 2, "Posting TF TD", "TMA"),
+    ("No-tf misc instruction", "memo", 3, "MISC CIMB TF TD", "TMA"),
+    ("No-tf cfd instruction", "memo", 5, "CFD TF TD", "TMA"),
+    ("No-tf rebate instruction", "memo", 7, "Rebate TF TD", "TMA"),
+    ("No-tf pending instruction", "memo", 11, "Pending TF TD", "TMA"),
+    ("No-tf SETTLE instruction", "memo", -9, "Settle", "TMA"),
+    ("No-tf SETTLE TMG instruction", "memo", -13, "Settle", "TMG"),
+    ("No-tf posting TMG excluded", "memo", 17, "Posting TF TD", "TMG"),
+    ("No-tf posting fee override", "fee", 19, "Bank Fee", "TMA"),
+    ("No-tf SETTLE PSP override", "psp settle", 23, "PSP Settle In", "TMA"),
 ]
 
 
@@ -87,6 +99,38 @@ def flow_collision_inputs(needed: Path, mixed: bool = False) -> None:
     daily.write_csv(path, rows[0], rows[1:])
 
 
+def comment_keyword_inputs(path: Path) -> None:
+    book=load_workbook(path)
+    sheet=book["BANK BD"]
+    for comment, rational, amount, expected_type, branch in COMMENT_KEYWORD_CASES:
+        sheet.append([amount if amount >= 0 else None, -amount if amount < 0 else None,
+                      comment, rational, "USD", branch + "-Retail", amount])
+    book.save(path)
+
+
+def write_comment_policy_oracles(root: Path) -> None:
+    """Write expectations only; existing synthetic input bytes are never changed."""
+    marker=json.loads((root/MARKER).read_text(encoding="utf-8"))
+    if marker.get("synthetic_only") is not True:
+        raise ValueError("Policy oracles require an explicitly marked synthetic workspace.")
+    added=marker["scenario"] == "comment-keywords"
+    monthly=json.loads((root/"monthly_expected.json").read_text(encoding="utf-8"))
+    monthly["settle_pnl"]={"TMA":404 if added else 385,"TMG":-20 if added else -7,"Total":384 if added else 378}
+    monthly["breakdown"].update({"To settle pnl (TMA)":monthly["settle_pnl"]["TMA"],"To Settle adj (TMG)":monthly["settle_pnl"]["TMG"]})
+    monthly["breakdown"]["Check"]=monthly["breakdown"]["Diff"]-monthly["settle_pnl"]["TMA"]-monthly["settle_pnl"]["TMG"]+25
+    monthly["policy"]="User-confirmed Comment keywords without Rational tf prerequisite"
+    (root/"monthly_expected_comment_policy.json").write_text(json.dumps(monthly,indent=2)+"\n",encoding="utf-8")
+    expected=json.loads((root/"expected.json").read_text(encoding="utf-8"))
+    row=next(r for r in expected["sheets"]["TransactionExchange"]["rows"] if r["Comment"]=="Synthetic priority miscellaneous decoy")
+    row["Transaction Type"]="MISC CIMB TF TD"
+    (root/"expected_comment_policy.json").write_text(json.dumps(expected,indent=2)+"\n",encoding="utf-8")
+    historical=root/"historical_expected.json"
+    if historical.exists():
+        old=json.loads(historical.read_text(encoding="utf-8"))
+        old["settle_pnl"]={"TMA":325,"TMG":-3,"Total":322}
+        (root/"historical_expected_comment_policy.json").write_text(json.dumps(old,indent=2)+"\n",encoding="utf-8")
+
+
 def pending_snapshot(path: Path, day: datetime, scenario: str) -> None:
     book = load_workbook(path)
     sheet = book["PSP On The Way"]
@@ -137,6 +181,8 @@ def generate(root: Path, scenario: str) -> None:
         settlement_inputs(needed / "PSP+BANK/BANK BD.xlsx", day)
         if scenario in {"flow-source-collision", "flows-mixed"}:
             flow_collision_inputs(needed, scenario == "flows-mixed")
+        if scenario == "comment-keywords":
+            comment_keyword_inputs(needed / "PSP+BANK/BANK BD.xlsx")
         pending_snapshot(needed / "PSP+BANK/BANK BD.xlsx", day, scenario)
     daily.write_mapping(root / "db/tmc/account_mapping.xlsx")
     oracle = Path(__file__).parent / "fixtures/monthly_expected.json"
@@ -190,17 +236,32 @@ def generate(root: Path, scenario: str) -> None:
                     "Transaction Type":"Deposit", "Currency":"USD", "Amount":amount, "USD Equivalent":amount})
             transactions["total_usd"] = 2764
             transactions["source_totals_usd"] = {"Transaction reports":345,"BANK BD":2419}
+    if scenario == "comment-keywords":
+        for comment,rational,amount,expected_type,branch in COMMENT_KEYWORD_CASES:
+            transactions["rows"].append({"Source":"BANK BD","Comment":comment,"Rational":rational,
+                "Transaction Type":expected_type,"Branch":branch,"Type":"Retail","Currency":"USD","Amount":amount,"USD Equivalent":amount})
+        transactions["total_usd"]=2726
+        transactions["source_totals_usd"]["BANK BD"]=2476
     (root / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (root / MARKER).write_text(json.dumps({"synthetic_only": True, "scenario": scenario, "dates": [d.strftime("%Y.%m.%d") for d in days]}, indent=2) + "\n", encoding="utf-8")
+    write_comment_policy_oracles(root)
+    if scenario == "comment-keywords":
+        for original,sidecar in [("monthly_expected.json","monthly_expected_comment_policy.json"),("expected.json","expected_comment_policy.json")]:
+            (root/original).write_text((root/sidecar).read_text(encoding="utf-8"),encoding="utf-8")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scenario", choices=SCENARIOS, default="good")
+    parser.add_argument("--oracles-only", action="store_true", help="Write new-policy sidecar expectations without changing existing marked input files.")
     args = parser.parse_args()
-    generate(args.output.resolve(), args.scenario)
-    print(json.dumps({"synthetic_only": True, "scenario": args.scenario, "workspace": str(args.output.resolve()), "business_acceptance_executed": False}))
+    if args.oracles_only:
+        write_comment_policy_oracles(args.output.resolve())
+    else:
+        generate(args.output.resolve(), args.scenario)
+    actual_scenario=json.loads((args.output.resolve()/MARKER).read_text(encoding="utf-8"))["scenario"]
+    print(json.dumps({"synthetic_only": True, "scenario": actual_scenario, "workspace": str(args.output.resolve()), "input_files_modified":not args.oracles_only, "business_acceptance_executed": False}))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,12 @@ Pending summary entity rows are reordered among out-of-scope decoys. Q:T has no 
 
 ## Installed task seam
 
+### Current Comment keyword policy
+
+The user's later confirmation removes the Rational `tf` prerequisite for the five Comment keywords and recognizes Comment SETTLE; later fee/PSP-settlement overrides retain their order. The amounts above are the historical expectations for frozen sources 9f67/dbc, not the new policy. Existing input records/amounts remain unchanged: the original miscellaneous Comment / unrelated Rational record of 304 now qualifies, so current baseline SETTLE PNL is TMA385/TMG-7/Total378. Use `monthly_expected_comment_policy.json` and `expected_comment_policy.json` for the new candidate; `--oracles-only` prepares these expectations without changing any existing input bytes.
+
+The `comment-keywords` scenario adds five `Rational=memo` keyword records and a SETTLE record, a TMG SETTLE/Posting contrast, and fee/PSP overrides. Its 38 daily records total USD2726, settlement is TMA404/TMG-20/Total384, and customer flows remain unchanged. It uses current-policy expectations by default. Old-source screenshots and results remain bound to their original source; parity with the old classifier cannot invalidate the user's new confirmation.
+
 Use the existing UI harness with `-ExpectedMonthlyStage Balances -ExpectedMonthlyStageOutcome Complete` for Issue #9. The task diagnostic must contain MonthlyStage, MonthlyStageComplete, DailyOutput and MonthlyOutput. The harness ignores an earlier daily-only diagnostic when expecting a monthly task. Top-level Complete remains false while downstream monthly features are unfinished; stage completion must not be presented as complete reconciliation.
 
 The normal monthly output is `<workspace>/monthly/CashRec_Breakdown_2026.10.xlsx`. Entity/Total sheets use two header rows; Break down uses one. `verify_monthly_outputs.py` identifies repeated fields by the MT4/BANK/DIFF group and business header, checks exact values and unique dates, and verifies SETTLE PNL moves to N while Break down retains all sixteen columns. It reports only an independent artifact read and never claims a GUI launch or actual Excel edit.
