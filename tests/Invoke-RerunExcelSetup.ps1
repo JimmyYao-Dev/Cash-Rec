@@ -81,8 +81,14 @@ try{
  }
  foreach($s in $book.Worksheets){
   $first=if($s.Name -eq 'Break down'){2}else{3}
-  $range=$s.Range($s.Cells.Item($first,1),$s.Cells.Item($s.UsedRange.Rows.Count,$s.UsedRange.Columns.Count))
-  [void]$range.Sort($s.Cells.Item($first,1),2,$null,$null,1,$null,1,2)
+  $current=Find-DateRow $s $BusinessDate $first
+  if($current -ne $first){
+   # Cut/insert moves whole rows and Excel updates cross-sheet references. Independent
+   # sorting on each sheet can itself break linked formulas before the app is run.
+   [void]$s.Rows.Item($current).Cut()
+   [void]$s.Rows.Item($first).Insert(-4121)
+   $excel.CutCopyMode=$false
+  }
  }
  $sheet.Move($book.Worksheets.Item(1));$excel.CalculateFull();$sheet.Activate();$excel.ActiveWindow.Zoom=85
  $book.Save();$book.SaveCopyAs((Join-Path $EvidenceDirectory 'seeded-monthly.xlsx'))
