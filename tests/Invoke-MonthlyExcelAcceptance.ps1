@@ -87,7 +87,7 @@ try{
  $owned=$existing -notcontains [int]$createdPid
  $result.ExcelPid=$createdPid;$result.OwnNewInstance=$owned
  if(-not $owned){throw 'Excel did not create a new isolated process; no existing instance will be changed or closed.'}
- $excel.Visible=$true;$excel.DisplayAlerts=$false;$excel.AskToUpdateLinks=$false
+ $excel.Visible=$true;$excel.WindowState=-4137;$excel.DisplayAlerts=$false;$excel.AskToUpdateLinks=$false
  $book=$excel.Workbooks.Open($Workbook,0,$false)
  $excel.CalculateFull()
  $date=[string]$oracleData.business_date
