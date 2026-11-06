@@ -1,6 +1,6 @@
 # Monthly batch acceptance
 
-Scope: Issues #9–#15. Parent #1 remains open. Each business case starts from the actually installed GUI; independent workbook readers and developer tests support that entry point. The final complete monthly release is not established by an intermediate stage.
+Scope: Issues #9–#15. Parent #1 remains open. Each business case starts from the actually installed GUI; independent workbook readers and developer tests support that entry point. The final 0.2.0 package gate passed on source `149a91e`; individual ticket rounds below remain bound to their own historical sources and are not added to final-package counts.
 
 | Issue | Current status | Evidence source |
 | --- | --- | --- |
@@ -104,4 +104,33 @@ This completes the individual ticket gates, not the final reviewed-release gate.
 
 The fixed review `88ca901...84a4c74` found one Standards P2 (test XML namespace loss) and one Spec P2 (lost committed paths after diagnostic write failure). Unified fix `73ffb6e` and GUI fault tooling are integrated at `e248afaa`; both original reviewers independently verified zero remaining and zero new findings. See `monthly-review-resolution.md` for the separate axes and fault evidence.
 
-The old installed `2c519e5` package reproduces the path loss in both single-day and range GUI runs. New controlled inputs now open normally in actual Excel after the XML fix. All injected ACLs were restored exactly. These old-package failures and source controls are retained separately; the repaired final package's GUI green and overall regression are still pending.
+The old installed `2c519e5` package reproduces the path loss in both single-day and range GUI runs. New controlled inputs now open normally in actual Excel after the XML fix. All injected ACLs were restored exactly. These old-package failures and source controls are retained separately from the repaired final package's green evidence below.
+
+## Final reviewed 0.2.0 package
+
+Final cleanup safely removed all ten clean, merged worktrees created by this batch while retaining their branches. The old protected `review-fixes` tree and snapshot remain untouched. Both delivery directories' eight files and eleven preserved installer copies retain their hashes. Local cleanup evidence: `.scratch/monthly-implementation/worktree-cleanup-results.json` and `final-149a91e/preferences-cleanup/cleanup-result.json`.
+
+Compiled source `149a91e6877aa6e5b52aedc7f846bd51624bde84`; installed ProductVersion `0.2.0+149a91e6877aa6e5b52aedc7f846bd51624bde84`. Installer is 36,998,199 bytes, SHA256 `AE204AC0C93E0DBBA317E871A04D143A38A4C0F19FB835DAD971D6312FAB7C5E`. Installed executable SHA256 `5758B32201AE02321594A622E80E174DCE60BF598C0AEC306EFFFFE6E75F0150` matches the 12-file publish manifest. Final local summary: `.scratch/monthly-implementation/acceptance/final-149a91e/source-149a91e-summary.json`; output snapshots are under `source-bound-final-state`. Delivery is `outputs/CashRec-0.2.0` with installer, Chinese guide, release-info and SHA256SUMS. No source or developer tools are included in the installer. The accepted 0.1.0 installer remains unchanged.
+
+The final package completed 31 synthetic GUI invocations: 21 main and 10 preparation seeds. Nine ordinary range calls yielded three Success, five Partial and one Failed, all matching their scenario expectations; two additional GUI calls validate diagnostic-write faults. A separate private-input GUI run is an expected Failure. These numbers are operations/events, not unique business dates or an all-success generation count. Twelve owned Excel operations include five manual-matrix contexts (60 negative/zero/clear steps), one DEP edit and one rerun preparation save. Seventy-five independent artifact-reader reports check amounts, keys, dates, formulas, caches, styles, backups and input integrity. All 576 prepared raw/mapping file hashes remain as expected, allowing only the explicitly declared rerun fixture mutation; unexpected changes are zero.
+
+| Final-package coverage | Observed result |
+| --- | --- |
+| Daily four sheets and monthly four sheets | Complete independent numerical/cache oracles before Excel; child process also runs without developer-tool environment |
+| DEP and NET PSP | Actual Excel DEP0→30 keeps Movement8 and changes PNL8→−22; withdrawal edit recalculates entity/Total flows |
+| Manual fields and Check | Every G/L/M/N field cycles negative→numeric0→clear; type/format and Check are asserted at each step |
+| Negative conversion lifecycle | Actual Excel M−6.75 survives same-date rerun, carry, append and repeated dated-folder range; baseline Check−580.75/current−565.75 |
+| Rerun identity and backups | Reordered dates/tabs, new/disappeared keys, complete manual styles, unmatched CSV and exact backup hashes pass |
+| Month/range behavior | Inclusive ordered dates, weekend/month boundary, one-time initialization, old-month SHA, repeated upsert, missing folder/file/PSP date, duplicate PSP date, no-prior Partial/Blocked and reversed zero-day run pass |
+| Stale manual-area controls | Fixed prepared sources first open normally in actual Excel; GUI clears old O/Q/S/U and unavailable C/F/P, retaining manual values/formats |
+| Post-commit diagnostic failures | Actual single-day/range GUI retains all two/four report paths, partial/unwritten-record feedback and usable result location; ACLs restored exactly |
+| Locked outputs | Daily/monthly GUI lock failures report NotCommitted and leave original pair hashes unchanged |
+| Necessary daily regressions | USDT1, historical/date-specific FX, PSP trueblank0, full CSV windows, structural template rows and meaningful missing-currency rejection pass |
+
+The lock tests reject before report replacement. The production committer's late I/O rollback remains auxiliary developer evidence, not a claimed GUI-triggered late failure. Actual Excel and GUI operations use only new owned instances; the user's existing Excel instance is untouched. Test workspace preferences were backed up and cleared without changing other settings.
+
+Private evidence remains outside the public synthetic-evidence set. Its final run reports exactly nine bank-mapping errors, other errors zero, and unchanged private input hashes. No mapping classes were invented; full real-data generation is still not certified. Original business files, templates, mappings, recordings, transcripts and private screenshots remain local.
+
+Observed system: Windows 11 Enterprise 10.0.26100 AMD64. The normal single-day sample has seven current input files/20,969 bytes, observed launch2.969s, run-to-diagnostic3.241s and peak working set141,840,384 bytes; prior raw-balance reconstruction may read additional inputs. These UI-observed small-sample values do not certify large-data performance. Windows10/clean-VM matrices and Issues #16–#19 were not executed; the installer is unsigned. Parent #1 stays Open and PR20 stays Draft without merge.
+
+Setup-only mistakes are kept separate: initial Windows PowerShell module discovery failures occurred before Excel opening or ACL/GUI actions; explicit built-in module paths corrected the controllers. The first Excel-controller exception was retained, but its initial stdout was overwritten on retry. A carry-row reader initially inferred October from the October31 oracle while checking the November workbook; correcting the reader's explicit workbook selection verified the already correct app output. No app source was changed and no setup mistake was counted as a passing business case.
