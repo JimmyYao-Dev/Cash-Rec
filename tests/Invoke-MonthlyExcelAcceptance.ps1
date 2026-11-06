@@ -20,7 +20,7 @@ public static class CashRecMonthlyExcelWindow {
 '@
 }
 function Assert-Number($Actual,$Expected,$Context){
- if($null -eq $Actual -or $Actual -is [string] -or [math]::Abs([double]$Actual-[double]$Expected) -gt 0.00000001){throw ($Context+' differs from the independent synthetic expectation.')}
+ if($null -eq $Actual -or $Actual -is [string] -or $Actual -is [bool] -or [math]::Abs([double]$Actual-[double]$Expected) -gt 0.00000001){throw ($Context+' differs from the independent synthetic expectation.')}
 }
 function Normalize-Header($Value){return ([regex]::Replace([string]$Value,'[^A-Za-z0-9]','')).ToLowerInvariant()}
 function Find-DateRow($Sheet,[string]$Date,[int]$First){
@@ -172,9 +172,14 @@ try{
   $wanted='=F{0}-G{0}-H{0}-I{0}-J{0}-K{0}-L{0}-M{0}-N{0}' -f $row
   if($formula.Replace('$','').Replace(' ','') -ne $wanted){throw 'Actual Excel Check is not the required relative subtraction formula.'}
   $before=@{}
+  $manualFields=@{7='To LP';12='Bank Fee';13='Bank fee-conversion';14='Time Diff';15='Error'}
   foreach($column in @(7,12,13,14,15)){
    $state=Cell-State $sheet $row $column
-   if($null -ne $state.Value -or $state.HasFormula){throw 'Initial monthly manual/Error cell is not truly blank in actual Excel.'}
+   $field=$manualFields[$column];$initialExpected=$null
+   if($column -ne 15 -and $null -ne $oracleData.manual_values -and $oracleData.manual_values.PSObject.Properties.Name -contains $field){$initialExpected=$oracleData.manual_values.$field}
+   if($state.HasFormula){throw 'Initial monthly manual/Error cell contains a formula.'}
+   if($null -eq $initialExpected){if($null -ne $state.Value){throw 'Initial monthly manual/Error cell is not truly blank in actual Excel.'}}
+   else{Assert-Number $state.Value $initialExpected ('Initial manual '+$field)}
    $before[[string]$column]=$state
   }
   $result.Before=$before;$result.CheckFormula=$formula
@@ -183,14 +188,15 @@ try{
   $sheet.Cells.Item($row,13).ClearContents()|Out-Null
   $sheet.Cells.Item($row,14).Value2=[double]-2.5
   $excel.CalculateFull()
-  $negativeExpected=[double]$oracleData.breakdown.Check+7.5
+  $automaticCheck=[double]$oracleData.breakdown.Diff-[double]$oracleData.breakdown.'To settle pnl (TMA)'-[double]$oracleData.breakdown.'To Settle adj (TMG)'-[double]$oracleData.breakdown.'To Settle (WS)'-[double]$oracleData.breakdown.'To Commission'
+  $negativeExpected=$automaticCheck+7.5
   [void](Check-Value $sheet $row 16 $negativeExpected 'Check after negative/zero/blank manual edits')
   $result.NegativeEdits=@{ToLP=(Cell-State $sheet $row 7);BankFee=(Cell-State $sheet $row 12);Conversion=(Cell-State $sheet $row 13);TimeDiff=(Cell-State $sheet $row 14);Check=$sheet.Cells.Item($row,16).Value2}
   $sheet.Cells.Item($row,7).Value2=[double]0;$excel.CalculateFull()
-  [void](Check-Value $sheet $row 16 ([double]$oracleData.breakdown.Check+2.5) 'Check after explicit zero')
+  [void](Check-Value $sheet $row 16 ($automaticCheck+2.5) 'Check after explicit zero')
   $result.ExplicitZero=Cell-State $sheet $row 7
   $sheet.Cells.Item($row,7).ClearContents()|Out-Null;$excel.CalculateFull()
-  [void](Check-Value $sheet $row 16 ([double]$oracleData.breakdown.Check+2.5) 'Check after clearing manual cell')
+  [void](Check-Value $sheet $row 16 ($automaticCheck+2.5) 'Check after clearing manual cell')
   $result.Cleared=Cell-State $sheet $row 7
   $sheet.Cells.Item($row,7).Value2=[double]-5;$excel.CalculateFull()
   [void](Check-Value $sheet $row 16 $negativeExpected 'Final Check')

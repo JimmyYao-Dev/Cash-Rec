@@ -178,9 +178,17 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
                 if cell.data_type=="f" or (wanted is not None and (cell.data_type!="n" or isinstance(cell.value,bool))):
                     raise AssertionError("Manual/Error fields must retain actual blank or numeric input types")
         if stage == "check":
+            if "tmnz" in norm(formula_breakdown.cell(1,8).value) or "tma" not in norm(formula_breakdown.cell(1,8).value):
+                raise AssertionError("TMA settlement header must exclude the obsolete TMNZ entity")
             for column, field in [(8,"To settle pnl (TMA)"),(9,"To Settle adj (TMG)"),(10,"To Settle (WS)"),(11,"To Commission"),(16,"Check")]:
-                compare(breakdown.cell(row, column).value, oracle["breakdown"][field], "Break down " + field)
+                wanted = None if column==16 and missing_client_diff else oracle["breakdown"][field]
+                compare(breakdown.cell(row, column).value, wanted, "Break down " + field)
+                if wanted is None and formula_breakdown.cell(row,column).value is not None:
+                    raise AssertionError("Unavailable Check must remain truly blank")
+            if formula_breakdown.cell(row,10).data_type!="n" or isinstance(formula_breakdown.cell(row,10).value,bool):
+                raise AssertionError("Wholesale settlement J must be literal numeric zero")
             for current in dates.values():
+                if formula_breakdown.cell(current,16).value is None:continue
                 wanted = "=F{r}-G{r}-H{r}-I{r}-J{r}-K{r}-L{r}-M{r}-N{r}".format(r=current)
                 formula = str(formula_breakdown.cell(current,16).value).replace("$", "").replace(" ", "")
                 if formula != wanted:
