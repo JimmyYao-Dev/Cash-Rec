@@ -13,7 +13,7 @@ import generate_fixtures as daily
 
 MARKER = ".cashrec-monthly-test-fixture.json"
 DATES = [datetime(2026, 10, 19), daily.PREVIOUS, daily.CURRENT]
-SCENARIOS = ("good", "no-previous", "pending-uncached", "pending-wrong-total", "pending-duplicate", "pending-missing-entity", "flow-source-collision")
+SCENARIOS = ("good", "no-previous", "pending-uncached", "pending-wrong-total", "pending-duplicate", "pending-missing-entity", "flow-source-collision", "flows-mixed")
 PENDING = {
     "2026.10.19": {"TMA": (800, 750, 50), "TMG": (1700, 1580, 120)},
     "2026.10.22": {"TMA": (900, 820, 80), "TMG": (1800, 1650, 150)},
@@ -49,7 +49,7 @@ def settlement_inputs(path: Path, day: datetime) -> None:
     book.save(path)
 
 
-def flow_collision_inputs(needed: Path) -> None:
+def flow_collision_inputs(needed: Path, mixed: bool = False) -> None:
     path = needed / "PSP+BANK/BANK BD.xlsx"
     book = load_workbook(path)
     sheet = book["BANK BD"]
@@ -57,6 +57,9 @@ def flow_collision_inputs(needed: Path) -> None:
         if row[2].value == "Synthetic BANK BD PSP deposit":
             row[2].value = "Gateway-B deposit"
     sheet.append([0, None, "Zero BANK BD Wholesale", "Deposit", "USD", "TMG-Wholesale", 0])
+    if mixed:
+        sheet.append([8, None, "Wholesale positive offset", "Deposit", "USD", "TMA-Wholesale", 8])
+        sheet.append([0, None, "Wholesale zero offset", "Deposit", "USD", "TMA-Wholesale", 0])
     book.save(path)
     path = needed / "MT4/MT4/Transaction Summary Report.csv"
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -70,6 +73,17 @@ def flow_collision_inputs(needed: Path) -> None:
               "jurisdiction":"Australian Securities and Investments Commission ASIC",
               "payment_channel":"Synthetic", "mapping_deal":"DECOY", "mapping_deal_currency":"EUR"}
     rows.append([record.get(header, "") for header in rows[0]])
+    if mixed:
+        for index, (comment, amount, kind) in enumerate([
+            ("Duplicate same-amount PSP deposit", 100, "Deposit"),
+            ("Additional PSP deposit", 5, "Deposit"),
+            ("Zero PSP withdrawal", 0, "Withdrawal"),
+            ("NAB synthetic withdrawal", -10, "Withdrawal"),
+        ], 1):
+            extra = dict(record)
+            extra.update({"crm_transaction_no":f"FLOW-MIX-{index}", "trading_server_transaction_no":f"MIX-ID-{index}",
+                          "fund_amount":amount, "comment":comment, "accounting_comment":kind})
+            rows.append([extra.get(header, "") for header in rows[0]])
     daily.write_csv(path, rows[0], rows[1:])
 
 
@@ -121,12 +135,21 @@ def generate(root: Path, scenario: str) -> None:
                 book["OCT.2026"].cell(1, column).value = day
             book.save(psp)
         settlement_inputs(needed / "PSP+BANK/BANK BD.xlsx", day)
-        if scenario == "flow-source-collision":
-            flow_collision_inputs(needed)
+        if scenario in {"flow-source-collision", "flows-mixed"}:
+            flow_collision_inputs(needed, scenario == "flows-mixed")
         pending_snapshot(needed / "PSP+BANK/BANK BD.xlsx", day, scenario)
     daily.write_mapping(root / "db/tmc/account_mapping.xlsx")
     oracle = Path(__file__).parent / "fixtures/monthly_expected.json"
     (root / "monthly_expected.json").write_text(oracle.read_text(encoding="utf-8"), encoding="utf-8")
+    if scenario == "flows-mixed":
+        monthly = json.loads(oracle.read_text(encoding="utf-8"))
+        monthly["flows"] = {
+            "TMA":{"PSP DEP":205,"PSP WITH":-30,"NET PSP":175,"NET BW":90,"NET WS":0},
+            "TMG":{"PSP DEP":100,"PSP WITH":-20,"NET PSP":80,"NET BW":0,"NET WS":0},
+            "Total":{"PSP DEP":305,"PSP WITH":-50,"NET PSP":255,"NET BW":90,"NET WS":0},
+        }
+        monthly["breakdown"].update({"MT4":345,"WS DEP":0,"Diff":-82,"Check":-131})
+        (root / "monthly_expected.json").write_text(json.dumps(monthly, indent=2) + "\n", encoding="utf-8")
     expected = json.loads((Path(__file__).parent / "fixtures/expected.json").read_text(encoding="utf-8"))
     transactions = expected["sheets"]["TransactionExchange"]
     for index, category in enumerate(SETTLEMENT_TYPES, 1):
@@ -144,13 +167,29 @@ def generate(root: Path, scenario: str) -> None:
             "Transaction Type":expected_type, "Branch":branch, "Type":"Retail", "Currency":"USD", "Amount":amount, "USD Equivalent":amount})
     transactions["total_usd"] = 2661
     transactions["source_totals_usd"]["BANK BD"] = 2411
-    if scenario == "flow-source-collision":
+    if scenario in {"flow-source-collision", "flows-mixed"}:
         row = next(row for row in transactions["rows"] if row["Source"] == "BANK BD" and row["Comment"] == "Synthetic BANK BD PSP deposit")
         row["Comment"] = "Gateway-B deposit"
         transactions["rows"].extend([
             {"Source":"Transaction reports", "Comment":"Zero PSP source collision", "Branch":"TMA", "Type":"PSP", "Transaction Type":"PSP Dep", "Currency":"USD", "Amount":0, "USD Equivalent":0},
             {"Source":"BANK BD", "Comment":"Zero BANK BD Wholesale", "Branch":"TMG", "Type":"Wholesale", "Transaction Type":"Deposit", "Currency":"USD", "Amount":0, "USD Equivalent":0},
         ])
+        if scenario == "flows-mixed":
+            for comment, amount, transaction_type, type_name in [
+                ("Duplicate same-amount PSP deposit",100,"PSP Dep","PSP"),
+                ("Additional PSP deposit",5,"PSP Dep","PSP"),
+                ("Zero PSP withdrawal",0,"PSP WITH","PSP"),
+                ("NAB synthetic withdrawal",-10,"BW WD","Retail"),
+            ]:
+                row={"Source":"Transaction reports", "Comment":comment, "Branch":"TMA", "Type":type_name,
+                     "Transaction Type":transaction_type, "Currency":"USD", "Amount":amount, "USD Equivalent":amount}
+                if type_name == "Retail":row["Exchange Type"]="MT4 BW"
+                transactions["rows"].append(row)
+            for comment, amount in [("Wholesale positive offset",8),("Wholesale zero offset",0)]:
+                transactions["rows"].append({"Source":"BANK BD", "Comment":comment, "Branch":"TMA", "Type":"Wholesale",
+                    "Transaction Type":"Deposit", "Currency":"USD", "Amount":amount, "USD Equivalent":amount})
+            transactions["total_usd"] = 2764
+            transactions["source_totals_usd"] = {"Transaction reports":345,"BANK BD":2419}
     (root / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (root / MARKER).write_text(json.dumps({"synthetic_only": True, "scenario": scenario, "dates": [d.strftime("%Y.%m.%d") for d in days]}, indent=2) + "\n", encoding="utf-8")
 

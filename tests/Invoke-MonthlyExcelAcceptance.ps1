@@ -3,7 +3,7 @@ param(
  [Parameter(Mandatory=$true)][string]$Workbook,
  [Parameter(Mandatory=$true)][string]$Oracle,
  [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
- [ValidateSet('ValidateBalances','ValidateFlows','EditCheck')][string]$Mode='ValidateBalances'
+ [ValidateSet('ValidateBalances','ValidateFlows','ValidateManualArea','EditCheck')][string]$Mode='ValidateBalances'
 )
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Drawing
@@ -91,7 +91,7 @@ try{
  $book=$excel.Workbooks.Open($Workbook,0,$false)
  $excel.CalculateFull()
  $date=[string]$oracleData.business_date
- if($Mode -ne 'EditCheck'){
+ if($Mode -in @('ValidateBalances','ValidateFlows')){
   $checks=@()
   foreach($entity in @('TMA','TMG','Total')){
    $sheet=$book.Worksheets.Item($entity)
@@ -136,6 +136,33 @@ try{
   }
   $sheet=$book.Worksheets.Item('TMA');$row=Find-DateRow $sheet $date 3
   $sheet.Activate();$sheet.Cells.Item($row, $(if($Mode -eq 'ValidateFlows'){4}else{14})).Select()|Out-Null
+ }elseif($Mode -eq 'ValidateManualArea'){
+  $sheet=$book.Worksheets.Item('Break down');$row=Find-DateRow $sheet $date 2
+  foreach($pair in @(@(2,'Settle Bal'),@(3,'Client Bank Move'),@(4,'MT4'),@(5,'WS DEP'),@(6,'Diff'))){[void](Check-Value $sheet $row $pair[0] $oracleData.breakdown.($pair[1]) ('Break down '+$pair[1]))}
+  $before=@{}
+  foreach($column in @(7,12,13,14,15)){
+   $state=Cell-State $sheet $row $column
+   if($null -ne $state.Value -or $state.HasFormula){throw 'Monthly manual/Error area is not genuinely blank in actual Excel.'}
+   $before[[string]$column]=$state
+  }
+  $result.Before=$before
+  $sheet.Cells.Item($row,7).Value2=[double]-5
+  $sheet.Cells.Item($row,12).Value2=[double]0
+  $sheet.Cells.Item($row,13).ClearContents()|Out-Null
+  $sheet.Cells.Item($row,14).Value2=[double]-2.5
+  $excel.CalculateFull()
+  $after=@{}
+  foreach($column in @(7,12,13,14,15)){
+   $state=Cell-State $sheet $row $column
+   if($state.NumberFormat -ne $before[[string]$column].NumberFormat -or $state.HasFormula){throw 'Actual manual-area edit changed its format or introduced a formula.'}
+   $after[[string]$column]=$state
+  }
+  Assert-Number $after['7'].Value -5 'Manual To LP negative'
+  Assert-Number $after['12'].Value 0 'Manual Bank Fee numeric zero'
+  Assert-Number $after['14'].Value -2.5 'Manual Time Diff negative'
+  if($null -ne $after['13'].Value -or $null -ne $after['15'].Value){throw 'Cleared conversion/Error cell did not remain blank.'}
+  $result.After=$after;$result.CheckVerification='Not required or claimed by this mode.'
+  $sheet.Activate();$sheet.Cells.Item($row,7).Select()|Out-Null
  }else{
   $sheet=$book.Worksheets.Item('Break down');$row=Find-DateRow $sheet $date 2
   foreach($pair in @(@(6,'Diff'),@(8,'To settle pnl (TMA)'),@(9,'To Settle adj (TMG)'),@(10,'To Settle (WS)'),@(11,'To Commission'),@(16,'Check'))){[void](Check-Value $sheet $row $pair[0] $oracleData.breakdown.($pair[1]) ('Break down '+$pair[1]))}

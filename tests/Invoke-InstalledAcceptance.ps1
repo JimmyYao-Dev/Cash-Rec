@@ -129,17 +129,38 @@ try {
  }while($null -eq $window -and [DateTime]::UtcNow -lt $deadline)
  if($null -eq $window){throw 'Installed window unavailable. On Windows, run this harness in the interactive user desktop; the restricted sandbox desktop cannot see user windows.'}
  $launchWatch.Stop()
+ [void]$process.WaitForInputIdle(5000)
  $result.Measurements.LaunchToWindowMilliseconds=[math]::Round($launchWatch.Elapsed.TotalMilliseconds,1)
  $result.WindowTitle=$window.Current.Name
  if($ExpectedVersion -and ($result.WindowTitle -notlike ('*'+$ExpectedVersion+'*') -or -not $result.Measurements.AppFileVersion.StartsWith($ExpectedVersion))){throw 'The installed window or executable version differs from the expected release.'}
  $workspaceControl=Find-Control $window 'workspaceBox'
  $workspaceControl.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($Workspace)
  $dateControl=Find-Control $window 'businessDatePicker'
- [void][CashRecUiaNative]::SetForegroundWindow([IntPtr]$window.Current.NativeWindowHandle)
- $dateControl.SetFocus()
- Assert-OwnForeground $process.Id
- [Windows.Forms.SendKeys]::SendWait('{HOME}'+$BusinessDate.ToString('yyyy')+'{RIGHT}'+$BusinessDate.ToString('MM')+'{RIGHT}'+$BusinessDate.ToString('dd')+'{TAB}')
- $observedDate=$dateControl.GetCurrentPropertyValue([Windows.Automation.ValuePattern]::ValueProperty)
+ $result.DateInputAttempts=@()
+ for($attempt=1;$attempt -le 3;$attempt++){
+  [void][CashRecUiaNative]::SetForegroundWindow([IntPtr]$window.Current.NativeWindowHandle)
+  $dateControl.SetFocus()
+  Start-Sleep -Milliseconds 100
+  $record=[ordered]@{Attempt=$attempt;Focused=$dateControl.Current.HasKeyboardFocus;Segments=@()}
+  if(-not $record.Focused){$record.Observed=[string]$dateControl.GetCurrentPropertyValue([Windows.Automation.ValuePattern]::ValueProperty);$result.DateInputAttempts+=$record;continue}
+  $segmentIndex=-1
+  foreach($keys in @('{HOME}',$BusinessDate.ToString('yyyy'),'{RIGHT}',$BusinessDate.ToString('MM'),'{RIGHT}',$BusinessDate.ToString('dd'),'{TAB}')){
+   $segmentIndex++
+   Assert-OwnForeground $process.Id
+   [Windows.Forms.SendKeys]::SendWait($keys)
+   Start-Sleep -Milliseconds 80
+   $segmentValue=[string]$dateControl.GetCurrentPropertyValue([Windows.Automation.ValuePattern]::ValueProperty)
+   $record.Segments+=$segmentValue
+   if($segmentIndex -in @(1,3,5)){
+    $parsedSegment=[datetime]::ParseExact($segmentValue,'yyyy.MM.dd',[Globalization.CultureInfo]::InvariantCulture)
+    if($parsedSegment.Year -ne $BusinessDate.Year -or ($segmentIndex -ge 3 -and $parsedSegment.Month -ne $BusinessDate.Month) -or ($segmentIndex -ge 5 -and $parsedSegment.Day -ne $BusinessDate.Day)){$record.InvalidSegment=$segmentIndex;break}
+   }
+  }
+  $observedDate=$dateControl.GetCurrentPropertyValue([Windows.Automation.ValuePattern]::ValueProperty)
+  $record.Observed=[string]$observedDate
+  $result.DateInputAttempts+=$record
+  if([string]$observedDate -eq $BusinessDate.ToString('yyyy.MM.dd')){break}
+ }
  if([string]$observedDate -ne $BusinessDate.ToString('yyyy.MM.dd')){throw 'The actual date picker value did not change to the requested date.'}
  if($ImportFile){
   $ImportFile=(Resolve-Path -LiteralPath $ImportFile).Path
