@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ import generate_fixtures as daily
 
 MARKER = ".cashrec-monthly-test-fixture.json"
 DATES = [datetime(2026, 10, 19), daily.PREVIOUS, daily.CURRENT]
-SCENARIOS = ("good", "no-previous", "pending-uncached", "pending-wrong-total", "pending-duplicate", "pending-missing-entity")
+SCENARIOS = ("good", "no-previous", "pending-uncached", "pending-wrong-total", "pending-duplicate", "pending-missing-entity", "flow-source-collision")
 PENDING = {
     "2026.10.19": {"TMA": (800, 750, 50), "TMG": (1700, 1580, 120)},
     "2026.10.22": {"TMA": (900, 820, 80), "TMG": (1800, 1650, 150)},
@@ -46,6 +47,30 @@ def settlement_inputs(path: Path, day: datetime) -> None:
         sheet.append([amount if amount >= 0 else None, -amount if amount < 0 else None,
                       comment, rational, "USD", branch + "-Retail", amount])
     book.save(path)
+
+
+def flow_collision_inputs(needed: Path) -> None:
+    path = needed / "PSP+BANK/BANK BD.xlsx"
+    book = load_workbook(path)
+    sheet = book["BANK BD"]
+    for row in sheet.iter_rows(min_row=2):
+        if row[2].value == "Synthetic BANK BD PSP deposit":
+            row[2].value = "Gateway-B deposit"
+    sheet.append([0, None, "Zero BANK BD Wholesale", "Deposit", "USD", "TMG-Wholesale", 0])
+    book.save(path)
+    path = needed / "MT4/MT4/Transaction Summary Report.csv"
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.reader(handle))
+    record = {"date":"2026-10-01", "user_id":"SYN-ZERO", "crm_transaction_no":"ZERO-1",
+              "trading_server_transaction_no":"ZERO-MT4-1", "trading_server_type":"MT4",
+              "trading_server":"Synthetic", "trading_server_login":"000000",
+              "fund_amount":0, "trading_server_currency":"USD", "payment_amount":999,
+              "payment_currency":"AUD", "exchange_rate":1, "surcharge_amount":0,
+              "comment":"Zero PSP source collision", "accounting_comment":"Deposit",
+              "jurisdiction":"Australian Securities and Investments Commission ASIC",
+              "payment_channel":"Synthetic", "mapping_deal":"DECOY", "mapping_deal_currency":"EUR"}
+    rows.append([record.get(header, "") for header in rows[0]])
+    daily.write_csv(path, rows[0], rows[1:])
 
 
 def pending_snapshot(path: Path, day: datetime, scenario: str) -> None:
@@ -96,6 +121,8 @@ def generate(root: Path, scenario: str) -> None:
                 book["OCT.2026"].cell(1, column).value = day
             book.save(psp)
         settlement_inputs(needed / "PSP+BANK/BANK BD.xlsx", day)
+        if scenario == "flow-source-collision":
+            flow_collision_inputs(needed)
         pending_snapshot(needed / "PSP+BANK/BANK BD.xlsx", day, scenario)
     daily.write_mapping(root / "db/tmc/account_mapping.xlsx")
     oracle = Path(__file__).parent / "fixtures/monthly_expected.json"
@@ -117,6 +144,13 @@ def generate(root: Path, scenario: str) -> None:
             "Transaction Type":expected_type, "Branch":branch, "Type":"Retail", "Currency":"USD", "Amount":amount, "USD Equivalent":amount})
     transactions["total_usd"] = 2661
     transactions["source_totals_usd"]["BANK BD"] = 2411
+    if scenario == "flow-source-collision":
+        row = next(row for row in transactions["rows"] if row["Source"] == "BANK BD" and row["Comment"] == "Synthetic BANK BD PSP deposit")
+        row["Comment"] = "Gateway-B deposit"
+        transactions["rows"].extend([
+            {"Source":"Transaction reports", "Comment":"Zero PSP source collision", "Branch":"TMA", "Type":"PSP", "Transaction Type":"PSP Dep", "Currency":"USD", "Amount":0, "USD Equivalent":0},
+            {"Source":"BANK BD", "Comment":"Zero BANK BD Wholesale", "Branch":"TMG", "Type":"Wholesale", "Transaction Type":"Deposit", "Currency":"USD", "Amount":0, "USD Equivalent":0},
+        ])
     (root / "expected.json").write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (root / MARKER).write_text(json.dumps({"synthetic_only": True, "scenario": scenario, "dates": [d.strftime("%Y.%m.%d") for d in days]}, indent=2) + "\n", encoding="utf-8")
 
