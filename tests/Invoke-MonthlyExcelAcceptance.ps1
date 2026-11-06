@@ -3,7 +3,7 @@ param(
  [Parameter(Mandatory=$true)][string]$Workbook,
  [Parameter(Mandatory=$true)][string]$Oracle,
  [Parameter(Mandatory=$true)][string]$EvidenceDirectory,
- [ValidateSet('ValidateBalances','EditCheck')][string]$Mode='ValidateBalances'
+ [ValidateSet('ValidateBalances','ValidateFlows','EditCheck')][string]$Mode='ValidateBalances'
 )
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Drawing
@@ -91,7 +91,7 @@ try{
  $book=$excel.Workbooks.Open($Workbook,0,$false)
  $excel.CalculateFull()
  $date=[string]$oracleData.business_date
- if($Mode -eq 'ValidateBalances'){
+ if($Mode -ne 'EditCheck'){
   $checks=@()
   foreach($entity in @('TMA','TMG','Total')){
    $sheet=$book.Worksheets.Item($entity)
@@ -107,8 +107,35 @@ try{
    $checks+=$record
   }
   $result.Checks=$checks
+  if($Mode -eq 'ValidateFlows'){
+   $flows=@()
+   foreach($entity in @('TMA','TMG','Total')){
+    $sheet=$book.Worksheets.Item($entity);$row=Find-DateRow $sheet $date 3;$headers=Grouped-Headers $sheet
+    $flow=[ordered]@{Sheet=$entity;Values=@{};Formulas=@{}}
+    foreach($field in @('PSP DEP','PSP WITH','NET PSP','NET BW','NET WS')){
+     $column=$headers['mt4/'+(Normalize-Header $field)]
+     $flow.Values[$field]=Check-Value $sheet $row $column $oracleData.flows.$entity.$field ($entity+' '+$field)
+     $flow.Formulas[$field]=[string]$sheet.Cells.Item($row,$column).Formula
+     if(($field -eq 'NET PSP' -or $entity -eq 'Total') -and -not $sheet.Cells.Item($row,$column).HasFormula){throw 'Monthly net or Total field is not a linked Excel formula.'}
+    }
+    $flows+=$flow
+   }
+   $result.FlowChecks=$flows
+   $sheet=$book.Worksheets.Item('TMA');$row=Find-DateRow $sheet $date 3
+   $totalSheet=$book.Worksheets.Item('Total');$totalRow=Find-DateRow $totalSheet $date 3
+   $beforeWith=[double]$sheet.Cells.Item($row,3).Value2
+   $sheet.Cells.Item($row,3).Value2=$beforeWith-5;$excel.CalculateFull()
+   $changedNet=Check-Value $sheet $row 4 ([double]$oracleData.flows.TMA.'NET PSP'-5) 'Actual NET PSP after signed withdrawal edit'
+   $changedTotal=Check-Value $totalSheet $totalRow 4 ([double]$oracleData.flows.Total.'NET PSP'-5) 'Actual Total NET PSP after entity edit'
+   $result.FlowFormulaEdit=@{BeforeWithdrawal=$beforeWith;EditedWithdrawal=$sheet.Cells.Item($row,3).Value2;EntityNetAfterEdit=$changedNet;TotalNetAfterEdit=$changedTotal}
+   $sheet.Activate();$sheet.Cells.Item($row,3).Select()|Out-Null
+   Capture-OwnedWindow $excel (Join-Path $EvidenceDirectory '03-excel-monthly-flow-edit.png')
+   $sheet.Cells.Item($row,3).Value2=$beforeWith;$excel.CalculateFull()
+   [void](Check-Value $sheet $row 4 $oracleData.flows.TMA.'NET PSP' 'Restored entity NET PSP')
+   [void](Check-Value $totalSheet $totalRow 4 $oracleData.flows.Total.'NET PSP' 'Restored Total NET PSP')
+  }
   $sheet=$book.Worksheets.Item('TMA');$row=Find-DateRow $sheet $date 3
-  $sheet.Activate();$sheet.Cells.Item($row,14).Select()|Out-Null
+  $sheet.Activate();$sheet.Cells.Item($row, $(if($Mode -eq 'ValidateFlows'){4}else{14})).Select()|Out-Null
  }else{
   $sheet=$book.Worksheets.Item('Break down');$row=Find-DateRow $sheet $date 2
   foreach($pair in @(@(6,'Diff'),@(8,'To settle pnl (TMA)'),@(9,'To Settle adj (TMG)'),@(10,'To Settle (WS)'),@(11,'To Commission'),@(16,'Check'))){[void](Check-Value $sheet $row $pair[0] $oracleData.breakdown.($pair[1]) ('Break down '+$pair[1]))}
