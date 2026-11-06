@@ -1,6 +1,15 @@
 namespace CashRec;
 
-public sealed record Diagnostic(string Severity, string Source, string Message);
+public sealed record Diagnostic(string Severity, string Source, string Message, string? Code = null);
+public static class DiagnosticCode
+{
+    public const string MissingInput = "MissingInput";
+    public const string MissingPspDate = "MissingPspDate";
+    public const string MissingPriorBasis = "MissingPriorBasis";
+    public const string MissingPriorKey = "MissingPriorKey";
+    public const string MissingPriorPending = "MissingPriorPending";
+    public const string InvalidDateRange = "InvalidDateRange";
+}
 public sealed record FormulaCell(string Formula, decimal CalculatedValue);
 
 public sealed class ReportTable(string name)

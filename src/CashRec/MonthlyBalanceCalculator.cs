@@ -20,7 +20,7 @@ internal static class MonthlyBalanceCalculator
         PendingSnapshot? previousPending = null;
         var previous = context.PreviousBalances;
         if (previous == null)
-            report.Diagnostics.Add(new("Incomplete", "月度余额", "没有有效同口径上期；当前余额保留，DIFF留空，不当零"));
+            report.Diagnostics.Add(new("Incomplete", "月度余额", "没有有效同口径上期；当前余额保留，DIFF留空，不当零", DiagnosticCode.MissingPriorBasis));
         else
         {
             report.Provenance.Add(new { Kind = "Previous balances", previous.Date, previous.Source, previous.DateDirectory });
@@ -33,7 +33,7 @@ internal static class MonthlyBalanceCalculator
             catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
             {
                 report.Diagnostics.Add(new("Incomplete", "月度PSP Pending",
-                    $"上期 {previous.Date:yyyy.MM.dd} 的 BANK BD 快照不可用：{error.Message}；PSP Pending DIFF留空，不借用当前累计值"));
+                    $"上期 {previous.Date:yyyy.MM.dd} 的 BANK BD 快照不可用：{error.Message}；PSP Pending DIFF留空，不借用当前累计值", DiagnosticCode.MissingPriorPending));
             }
         }
         foreach (var branch in new[] { "TMA", "TMG" })

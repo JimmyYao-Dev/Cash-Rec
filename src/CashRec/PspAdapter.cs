@@ -37,6 +37,11 @@ public sealed class PspAdapter : IReportAdapter
                 break;
             }
         }
+        if (layouts.Count == 0)
+        {
+            table.Diagnostics.Add(new("Error", Name, $"PSP Balance Summary：缺少{context.BusinessDate:yyyy.MM.dd}对应月份/Amount日期列，不能改用邻日或 Eq USD", DiagnosticCode.MissingPspDate));
+            return table;
+        }
         if (layouts.Count != 1)
             throw new InvalidDataException($"PSP Balance Summary：{context.BusinessDate:yyyy.MM.dd} 的月份/Amount列匹配数为 {layouts.Count}，需要唯一对应日期列，不能改用邻日或 Eq USD");
         var layout = layouts[0];

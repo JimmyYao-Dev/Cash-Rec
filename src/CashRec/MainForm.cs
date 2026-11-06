@@ -7,6 +7,10 @@ public sealed class MainForm : Form
 {
     readonly TextBox workspaceBox = new() { Name = "workspaceBox", AccessibleName = "workspaceBox", Dock = DockStyle.Fill };
     readonly DateTimePicker businessDatePicker = new() { Name = "businessDatePicker", AccessibleName = "businessDatePicker", Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy.MM.dd", Width = 150 };
+    readonly CheckBox rangeCheckBox = new() { Name = "rangeCheckBox", AccessibleName = "rangeCheckBox", Text = "日期范围", AutoSize = true, Padding = new Padding(0, 4, 0, 0) };
+    readonly DateTimePicker endDatePicker = new() { Name = "endDatePicker", AccessibleName = "endDatePicker", Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy.MM.dd", Width = 150, Visible = false };
+    readonly Label toLabel = new() { Text = "至", AutoSize = true, Padding = new Padding(0, 5, 0, 0), Visible = false };
+    readonly ToolTip inputHelp = new();
     readonly Button checkButton = new() { Name = "checkButton", AccessibleName = "checkButton", Text = "检查文件", AutoSize = true };
     readonly Button runButton = new() { Name = "runButton", AccessibleName = "runButton", Text = "生成报表", AutoSize = true };
     readonly Button importButton = new() { Name = "importButton", AccessibleName = "importButton", Text = "导入文件", AutoSize = true };
@@ -31,7 +35,7 @@ public sealed class MainForm : Form
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(24), RowCount = 6, ColumnCount = 1 };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 5));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
@@ -44,8 +48,8 @@ public sealed class MainForm : Form
         workspaceRow.Controls.Add(workspaceBox, 1, 0);
         workspaceRow.Controls.Add(browseButton, 2, 0);
         layout.Controls.Add(workspaceRow, 0, 1);
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(0, 8, 0, 0) };
-        actions.Controls.AddRange([businessDatePicker, importButton, checkButton, runButton, openButton]);
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Padding = new Padding(0, 8, 0, 8) };
+        actions.Controls.AddRange([businessDatePicker, rangeCheckBox, toLabel, endDatePicker, importButton, checkButton, runButton, openButton]);
         layout.Controls.Add(actions, 0, 2);
         layout.Controls.Add(progress, 0, 3);
         layout.Controls.Add(statusText, 0, 4);
@@ -58,7 +62,15 @@ public sealed class MainForm : Form
             using var dialog = new FolderBrowserDialog { Description = "选择业务工作目录", UseDescriptionForTitle = true };
             if (dialog.ShowDialog(this) == DialogResult.OK) workspaceBox.Text = dialog.SelectedPath;
         };
-        checkButton.Click += (_, _) => CheckInputs();
+        inputHelp.SetToolTip(importButton, "导入按单日进行；日期范围使用各日期目录中已准备的文件。");
+        inputHelp.SetToolTip(rangeCheckBox, "范围使用各日期目录中已准备的文件；需要导入时切回单日。");
+        rangeCheckBox.CheckedChanged += (_, _) =>
+        {
+            if (rangeCheckBox.Checked) endDatePicker.Value = businessDatePicker.Value.Date;
+            toLabel.Visible = endDatePicker.Visible = rangeCheckBox.Checked;
+            importButton.Enabled = !busy && !rangeCheckBox.Checked;
+        };
+        checkButton.Click += async (_, _) => await CheckInputs();
         importButton.Click += (_, _) => ImportFiles();
         runButton.Click += async (_, _) => await Generate();
         openButton.Click += (_, _) =>
@@ -90,11 +102,25 @@ public sealed class MainForm : Form
     void ShowDiagnostics(IEnumerable<Diagnostic> diagnostics) => statusText.Text = string.Join(Environment.NewLine,
         diagnostics.Select(d => $"[{d.Severity}] {d.Source}：{d.Message}"));
 
-    void CheckInputs()
+    async Task CheckInputs()
     {
         if (busy || !ValidWorkspace()) return;
+        SetBusy(true);
         try
         {
+            if (rangeCheckBox.Checked)
+            {
+                var workspace = WorkspaceInputs.RangeWorkspace(workspaceBox.Text);
+                var start = businessDatePicker.Value.Date; var end = endDatePicker.Value.Date;
+                var checks = await Task.Run(() => ReportBatchRunner.Dates(start, end).Select(date => WorkspaceInputs.Inspect(workspace, date)).ToList());
+                statusText.Text = "范围工作目录：" + workspace + Environment.NewLine + string.Join(Environment.NewLine,
+                    checks.SelectMany(check => new[] { $"{check.BusinessDate:yyyy.MM.dd}：{(check.CanRun ? "文件齐备" : "存在问题")}" }
+                        .Concat(check.Diagnostics.Select(diagnostic => $"[{diagnostic.Severity}] {diagnostic.Source}：{diagnostic.Message}"))));
+                var rangePath = ReportRunner.DiagnosticPath(workspace, start);
+                File.WriteAllText(rangePath, JsonSerializer.Serialize(new { Batch = true, Operation = "Check", StartDate = start, EndDate = end, Days = checks }, new JsonSerializerOptions { WriteIndented = true }));
+                SetResult(workspace, checks.All(check => check.CanRun) ? "范围文件检查完成" : "部分日期存在问题，请查看检查记录");
+                return;
+            }
             var check = WorkspaceInputs.Inspect(workspaceBox.Text, businessDatePicker.Value.Date);
             ShowDiagnostics(check.Diagnostics);
             var path = ReportRunner.DiagnosticPath(workspaceBox.Text, businessDatePicker.Value.Date);
@@ -102,6 +128,7 @@ public sealed class MainForm : Form
             SetResult(Path.GetDirectoryName(path)!, check.CanRun ? "文件准备检查完成" : "存在缺项，请查看检查记录");
         }
         catch (Exception error) { statusText.Text = "准备检查：" + error.Message; }
+        finally { SetBusy(false); }
     }
 
     void ImportFiles()
@@ -121,10 +148,7 @@ public sealed class MainForm : Form
     async Task Generate()
     {
         if (busy || !ValidWorkspace()) return;
-        busy = true;
-        checkButton.Enabled = runButton.Enabled = importButton.Enabled = false;
-        businessDatePicker.Enabled = workspaceBox.Enabled = browseButton.Enabled = false;
-        progress.Style = ProgressBarStyle.Marquee;
+        SetBusy(true);
         resultLabel.Text = "处理中…";
         var report = new Progress<string>(message => statusText.AppendText(Environment.NewLine + message));
         try
@@ -132,6 +156,23 @@ public sealed class MainForm : Form
             statusText.Text = $"处理业务日期 {businessDatePicker.Value:yyyy.MM.dd}";
             var workspace = workspaceBox.Text;
             var date = businessDatePicker.Value.Date;
+            if (rangeCheckBox.Checked)
+            {
+                var end = endDatePicker.Value.Date;
+                statusText.Text = $"处理日期范围 {date:yyyy.MM.dd} 至 {end:yyyy.MM.dd}";
+                var completed = new Progress<BatchDayResult>(day => statusText.AppendText(Environment.NewLine + DayText(day)));
+                var batch = await Task.Run(() => ReportBatchRunner.Run(workspace, date, end,
+                    message => ((IProgress<string>)report).Report(message), day => ((IProgress<BatchDayResult>)completed).Report(day)));
+                statusText.Text = "范围工作目录：" + batch.Workspace + Environment.NewLine
+                    + string.Join(Environment.NewLine, batch.Days.Select(DayText)) + Environment.NewLine
+                    + string.Join(Environment.NewLine, batch.Diagnostics.Select(diagnostic => $"[{diagnostic.Severity}] {diagnostic.Source}：{diagnostic.Message}"))
+                    + Environment.NewLine + "范围记录：" + batch.DiagnosticPath;
+                var counts = batch.Counts;
+                SetResult(batch.ResultsDirectory, batch.Diagnostics.Any(diagnostic => diagnostic.Code == DiagnosticCode.InvalidDateRange)
+                    ? "日期范围无效，未执行任务"
+                    : $"范围{(batch.Complete ? "完成" : StatusText(batch.Status))}；成功{counts["Success"]}，缺项{counts["Missing"]}，失败{counts["Failed"]}，部分完成{counts["Partial"]}");
+                return;
+            }
             var result = await Task.Run(() => ReportTaskRunner.Run(workspace, date, message => ((IProgress<string>)report).Report(message)));
             ShowDiagnostics(result.Diagnostics);
             if (result.DailyOutput != null) statusText.AppendText(Environment.NewLine + "每日基础表：" + result.DailyOutput);
@@ -143,17 +184,37 @@ public sealed class MainForm : Form
         catch (Exception error) { statusText.Text = "处理失败：" + error.Message; resultLabel.Text = "处理失败"; }
         finally
         {
-            busy = false;
-            checkButton.Enabled = runButton.Enabled = importButton.Enabled = true;
-            businessDatePicker.Enabled = workspaceBox.Enabled = browseButton.Enabled = true;
-            progress.Style = ProgressBarStyle.Blocks;
+            SetBusy(false);
         }
     }
+
+    void SetBusy(bool value)
+    {
+        busy = value;
+        checkButton.Enabled = runButton.Enabled = !value;
+        importButton.Enabled = !value && !rangeCheckBox.Checked;
+        businessDatePicker.Enabled = endDatePicker.Enabled = rangeCheckBox.Enabled = workspaceBox.Enabled = browseButton.Enabled = !value;
+        openButton.Enabled = !value && resultLocation != null;
+        progress.Style = value ? ProgressBarStyle.Marquee : ProgressBarStyle.Blocks;
+    }
+
+    static string StatusText(string status) => status switch { "Success" => "成功", "Missing" => "缺项", "Partial" => "部分完成", _ => "失败" };
+    static string DayText(BatchDayResult day) => $"{day.Date:yyyy.MM.dd}：{StatusText(day.Status)}{(day.Blocked ? "（上期基准受阻）" : "")}" + Environment.NewLine
+        + string.Join(Environment.NewLine, day.Diagnostics.Select(diagnostic => $"[{diagnostic.Severity}] {diagnostic.Source}：{diagnostic.Message}"))
+        + (day.DailyOutput == null ? "" : Environment.NewLine + "每日基础表：" + day.DailyOutput)
+        + (day.MonthlyOutput == null ? "" : Environment.NewLine + "月度报表：" + day.MonthlyOutput)
+        + (day.DiagnosticPath.Length == 0 ? "" : Environment.NewLine + "日期记录：" + day.DiagnosticPath);
 
     void SetResult(string directory, string message)
     {
         resultLocation = directory;
         openButton.Enabled = true;
         resultLabel.Text = message;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) inputHelp.Dispose();
+        base.Dispose(disposing);
     }
 }
