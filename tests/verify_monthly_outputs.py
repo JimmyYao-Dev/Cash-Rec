@@ -71,7 +71,7 @@ def grouped_column(columns: dict, group: str, field: str) -> int:
     return matches[0]
 
 
-def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str], incomplete: bool, missing_diff_fields: list[str]) -> dict:
+def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str], incomplete: bool, missing_diff_fields: list[str], classification_policy: str) -> dict:
     oracle = json.loads(oracle_path.read_text(encoding="utf-8-sig"))
     if not oracle.get("synthetic_only"):
         raise ValueError("Only independently specified synthetic oracles are accepted.")
@@ -83,10 +83,12 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
         target = oracle["business_date"]
         checks = []
         entity_values = {}
+        all_dates = set()
         for entity in ["TMA", "TMG", "Total"]:
             sheet = values[entity]
             formula_sheet = formulas[entity]
             dates = rows_by_date(sheet, 3)
+            all_dates.update(dates)
             if target not in dates:
                 raise AssertionError(f"{entity}: selected business date missing")
             if expected_dates and set(dates) != set(expected_dates):
@@ -128,6 +130,7 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
         breakdown = values["Break down"]
         formula_breakdown = formulas["Break down"]
         dates = rows_by_date(breakdown, 2)
+        all_dates.update(dates)
         if target not in dates or (expected_dates and set(dates) != set(expected_dates)):
             raise AssertionError("Break down has wrong business dates")
         row = dates[target]
@@ -152,8 +155,19 @@ def verify(path: Path, oracle_path: Path, stage: str, expected_dates: list[str],
                 if formula != wanted:
                     raise AssertionError("Check must retain its relative subtraction formula without rounding")
         checks.append({"sheet":"Break down", "date_rows":sorted(dates), "retained_columns":16, "stage_checked":stage})
+        classification = None
+        if classification_policy:
+            properties = {prop.name:prop.value for prop in formulas.custom_doc_props}
+            date_marker = "CashRecClassification_" + target.replace("-", "")
+            compare(properties.get(date_marker), classification_policy, "Selected-date classification policy")
+            compare(properties.get("CashRecMonthlyStageDate"), target.replace("-", "."), "Monthly stage business date")
+            unresolved = [day for day in sorted(all_dates) if properties.get("CashRecClassification_"+day.replace("-", "")) != classification_policy]
+            wanted_global = "Mixed" if unresolved else classification_policy
+            compare(properties.get("CashRecClassification"), wanted_global, "Global monthly classification policy")
+            classification = {"selected_date_policy":classification_policy, "global_policy":wanted_global, "unrestated_dates":unresolved}
         return {"passed":True, "entry":"Independent read only; GUI launch evidence is recorded separately",
                 "workbook":str(path), "oracle":str(oracle_path), "stage":stage, "checks":checks,
+                "classification":classification,
                 "actual_excel_edit_proved_here":False}
     finally:
         values.close()
@@ -168,10 +182,11 @@ def main() -> int:
     parser.add_argument("--expected-dates", nargs="+", default=[])
     parser.add_argument("--incomplete", action="store_true")
     parser.add_argument("--missing-diff-fields", nargs="+", choices=BALANCE_FIELDS, default=[])
+    parser.add_argument("--classification-policy", default="")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     try:
-        result = verify(args.workbook, args.expected, args.stage, args.expected_dates, args.incomplete, args.missing_diff_fields)
+        result = verify(args.workbook, args.expected, args.stage, args.expected_dates, args.incomplete, args.missing_diff_fields, args.classification_policy)
         status = 0
     except Exception as error:
         result = {"passed":False, "workbook":str(args.workbook), "error":str(error)}
