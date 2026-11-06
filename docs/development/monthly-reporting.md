@@ -1,6 +1,6 @@
 # Monthly reporting: balances, flows, difference and Check
 
-Issue #9 adds an independent monthly workbook after the existing daily four-sheet output; Issue #10 adds signed client-flow totals; Issue #11 adds Breakdown B:F and manual-area defaults; Issue #12 adds settlement, commission and Check; Issue #13 adds keyed manual preservation and compensated paired replacement. Version 0.2.0 keeps both artifacts and their status separate. Cross-month rollover and range processing remain later-ticket work.
+Issue #9 adds an independent monthly workbook after the existing daily four-sheet output; Issue #10 adds signed client-flow totals; Issue #11 adds Breakdown B:F and manual-area defaults; Issue #12 adds settlement, commission and Check; Issue #13 adds keyed manual preservation and compensated paired replacement; Issue #14 adds monthly append and rollover. Version 0.2.0 keeps both artifacts and their status separate. Date-range processing remains later-ticket work.
 
 ## Entry and output contract
 
@@ -35,6 +35,18 @@ PSP Pending reads the matching dated `Needed files/PSP+BANK/BANK BD.xlsx`, works
 The summary has no intrinsic row date. Its prepared date folder binds the snapshot to D, and provenance records the path, business date, row and SHA256. If an optional `CashRecSnapshotDate` property is present it must agree. File modification times are not substituted for business dates. A historical run never reads a later date folder as a fallback. Users remain responsible for putting the correct prepared snapshot in each dated folder.
 
 The previous Pending file must belong to the exact previous balance date. Missing or unreliable previous Pending leaves Pending DIFF blank; it does not fall back to today's cumulative values or a different previous date. Local provenance is stored under `monthly/.cashrec`.
+
+## Monthly lifecycle and rollover
+
+Same-month upsert keeps all dated rows in chronological order and writes each daily base workbook into its own date folder. When the selected prior balance date crosses a calendar-month boundary and the new monthly file needs initialization, `MonthlyRollover` requires the previous calendar month's workbook with compatible layout/entity/valuation markers. It independently finds each sheet's latest dated business record within that month. Blank, total, explanatory, date-formula and style-only records are not baseline candidates. The four selected dates must agree and, for a cross-month daily basis, equal the exact prior balance date; older or inconsistent dates are never substituted. The selected baseline date also needs the current classification marker. A stale marker explicitly asks the user to rerun that day under the updated Comment rules, preserving its old file and manual values.
+
+The source is read-only under a file-share guard and its exact SHA256 is recorded. Only the chosen baseline is captured into the new file; preceding dates and trailing records, including style-only rows, are removed in the new copy. Manual cells and full styles follow the carried date. Generated formulas/caches are rebound before Excel opens. A preserved manual formula that references a removed historical date is rejected explicitly rather than binding it to a different new-month row. The existing output transaction covers the new pair and trace files; the old monthly workbook is never a replacement target.
+
+`CashRecMonthlyBaselineDate` records the carried date. `CashRecMonthlyBaselineState` is Initialized, AwaitingPrevious, SameMonthBootstrap or SameMonthBootstrapNoPrior. Actual four-sheet carry dates are checked when a cross-month basis is consumed; merely finding a destination file is not proof of initialization. An existing uninitialized partial file receives the missing baseline without dropping its current-month rows or manual inputs. Subsequent dates normally append and do not reinitialize the month.
+
+First use in the middle of a month with a known same-month balance basis remains supported without requiring a previous monthly workbook. A missing-prior mid-month output stays explicitly partial, but later reliable same-month bases can complete their own dates. In contrast, a first calendar-day no-prior output records AwaitingPrevious; a later same-month date cannot make that known cross-month gap disappear. Preparing the previous month and rerunning can fill the missing carry row. No business calendar or automatic weekend skipping is inferred.
+
+The local monthly provenance record for the initializing task contains `Kind="Monthly rollover"`, BaselineDate, SourcePath, SourceSHA256 and Selection. A normal later append has no new rollover record. `CashRec.RolloverRegression` verifies same-month bootstrap, October 31 → November 2 → November 3, preserved manual styles/caches and source bytes, missing/empty/inconsistent/stale-policy baselines, partial-file repair, and the distinct first-day/mid-month no-prior states. Installed GUI and owned Excel checks remain required for the release gate.
 
 ## Signed client flows
 

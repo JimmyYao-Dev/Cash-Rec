@@ -40,6 +40,10 @@ Retail BANK BD classification uses Comment keywords without requiring `tf` in Ra
 
 Same-date reruns replace automatic values and formulas while matching DEP by business date, Branch, IB/Standard and Currency. Monthly To LP, fees and Time Diff follow their sheet and business date. Saved blank, zero and negative entries retain their formats even after row or tab reordering. New keys start with the default; disappeared manual keys are listed in a dated `UnmatchedManual_*.csv` beside the base workbook, with a link in the task diagnostic.
 
+Within a month, each selected business date is added once while existing dates remain. A new month carries only the previous month's last effective dated row from all four monthly sheets, including manual entries, and then adds the new date. The previous monthly file remains unchanged. Totals, notes and empty formatted rows do not become the baseline. If the prior file is missing, its four final dates differ, or its last date needs the updated Comment classification, generate that prior day through the interface first. Close the previous monthly file while using it as a rollover source.
+
+An initial mid-month run can start from a valid same-month balance basis without an older monthly file. A month-first run with no prior basis remains incomplete; adding later same-month data does not silently certify its missing cross-month baseline. Once the previous month is prepared, rerunning fills the baseline while preserving existing new-month dates and manual entries.
+
 Before replacing results, the tool keeps exact-file backups in the daily and monthly `backups` folders. The daily workbook, monthly workbook and related local trace files are prepared together. A failed task publishes no new pair; its diagnostic identifies retained results or any recovery files. Close output workbooks in Excel before rerunning. Successful generation still requires manual reconciliation.
 
 Upgrading or uninstalling the program preserves the independent business workspace. Back up important results before changing files.

@@ -9,16 +9,27 @@ internal static class MonthlyWorkbookWriter
     const string AmountFormat = "\"$\"#,##0.00;[Red]\\-\"$\"#,##0.00";
     const string NumberFormat = "_-* #,##0.00_-;\\-* #,##0.00_-;_-* \"-\"??_-;_-@_-";
 
-    public static void Write(string temporaryPath, string? existingPath, MonthlyReport report)
+    public static void Write(string temporaryPath, string? existingPath, MonthlyReport report, MonthlyRollover? rollover = null)
     {
-        using var book = existingPath == null ? NewWorkbook() : new XLWorkbook(existingPath);
+        var source = existingPath ?? rollover?.Path;
+        using var book = source == null ? NewWorkbook() : new XLWorkbook(source);
+        using var additional = existingPath != null && rollover != null ? new XLWorkbook(rollover.Path) : null;
         Validate(book);
         for (var index = 0; index < MonthlyLayout.Sheets.Length; index++) book.Worksheet(MonthlyLayout.Sheets[index]).Position = index + 1;
         SetProperty(book, "CashRecMonthlyStage", MonthlyStage.Current);
         SetProperty(book, "CashRecMonthlyStageComplete", report.StageComplete ? "1" : "0");
         SetProperty(book, "CashRecMonthlyStageDate", report.Date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture));
         SetProperty(book, "CashRecVersion", AppVersion.Current);
-        var caches = MonthlyHistory.Rewrite(book, report);
+        var caches = MonthlyHistory.Rewrite(book, report, existingPath == null ? rollover?.Date : null, additional, rollover?.Date);
+        if (rollover != null)
+        {
+            SetProperty(book, "CashRecMonthlyBaselineDate", rollover.Date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture));
+            SetProperty(book, "CashRecMonthlyBaselineState", "Initialized");
+        }
+        else if (source == null)
+            SetProperty(book, "CashRecMonthlyBaselineState", report.PreviousDate == null
+                ? report.Date.Day == 1 ? "AwaitingPrevious" : "SameMonthBootstrapNoPrior"
+                : "SameMonthBootstrap");
         MarkClassificationCoverage(book, report);
         book.SaveAs(temporaryPath, new SaveOptions { EvaluateFormulasBeforeSaving = false });
         WorkbookWriter.PersistFormulaValues(temporaryPath, caches);
@@ -104,7 +115,7 @@ internal static class MonthlyWorkbookWriter
         return book;
     }
 
-    static void Validate(XLWorkbook book)
+    internal static void Validate(XLWorkbook book)
     {
         if (book.CustomProperties.SingleOrDefault(property => property.Name == "CashRecMonthlyRules")?.Value.ToString() != MonthlyLayout.Rules
             || book.CustomProperties.SingleOrDefault(property => property.Name == "CashRecRules")?.Value.ToString() != ReportPolicy.EntityRules

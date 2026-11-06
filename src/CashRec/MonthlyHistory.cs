@@ -8,15 +8,17 @@ namespace CashRec;
 internal static class MonthlyHistory
 {
     sealed record Cell(XLCellValue Value, string Formula, decimal? Cache, IXLStyle Style);
-    sealed record Row(DateTime? Date, int OriginalRow, Cell[] Cells);
+    sealed record Row(DateTime? Date, int OriginalRow, Cell[] Cells, Dictionary<string, Dictionary<int, DateTime>> OriginalDates);
     static readonly string[] ScalarFields = ["Insto", "Retail", "Wholesale", "PSP", "PSP Pending", "Settle", "SETTLE PNL", "PSP DEP", "PSP WITH", "NET BW", "NET WS"];
 
-    internal static Dictionary<string, Dictionary<string, decimal>> Rewrite(XLWorkbook book, MonthlyReport current)
+    internal static Dictionary<string, Dictionary<string, decimal>> Rewrite(XLWorkbook book, MonthlyReport current,
+        DateTime? retainBaseline = null, XLWorkbook? additionalBaseline = null, DateTime? baselineDate = null)
     {
         using var styles = new XLWorkbook();
         var history = new Dictionary<string, Dictionary<DateTime, Row>>();
         var notes = new Dictionary<string, List<Row>>();
         var defaults = new Dictionary<string, Cell[]>();
+        var originalDatesByRow = MonthlyLayout.Sheets.ToDictionary(name => name, _ => new Dictionary<int, DateTime>());
         foreach (var name in MonthlyLayout.Sheets)
         {
             var sheet = book.Worksheet(name);
@@ -28,8 +30,11 @@ internal static class MonthlyHistory
             defaults[name] = Capture(sheet.Row(header + 1), styleSheet.Row(1), columns.Length);
             foreach (var source in sheet.RowsUsed(XLCellsUsedOptions.Contents).Where(row => row.RowNumber() > header))
             {
+                if (retainBaseline != null && source.Cell(1).HasFormula) continue;
                 var date = MonthlyWorkbookWriter.CellDate(source.Cell(1));
-                var saved = new Row(date, source.RowNumber(), Capture(source, styleSheet.Row(source.RowNumber() + 1), columns.Length));
+                if (date != null) originalDatesByRow[name][source.RowNumber()] = date.Value;
+                if (retainBaseline != null && date != retainBaseline) continue;
+                var saved = new Row(date, source.RowNumber(), Capture(source, styleSheet.Row(source.RowNumber() + 1), columns.Length), originalDatesByRow);
                 if (date == null)
                 {
                     notes[name].Add(saved);
@@ -46,13 +51,25 @@ internal static class MonthlyHistory
             }
             history[name] = rows;
         }
+        if (additionalBaseline != null)
+        {
+            var baselineDates = MonthlyLayout.Sheets.ToDictionary(name => name, name => additionalBaseline.Worksheet(name).RowsUsed(XLCellsUsedOptions.Contents)
+                .Where(row => row.RowNumber() > MonthlyLayout.HeaderRows(name) && !row.Cell(1).HasFormula)
+                .Select(row => (Number: row.RowNumber(), Date: MonthlyWorkbookWriter.CellDate(row.Cell(1))))
+                .Where(pair => pair.Date != null).ToDictionary(pair => pair.Number, pair => pair.Date!.Value));
+            foreach (var name in MonthlyLayout.Sheets)
+            {
+                var source = additionalBaseline.Worksheet(name).Row(baselineDates[name].Single(pair => pair.Value == baselineDate).Key);
+                var saved = new Row(baselineDate, source.RowNumber(), Capture(source, styles.AddWorksheet(name + " basis").Row(1), Columns(name).Length), baselineDates);
+                if (!history[name].TryAdd(baselineDate!.Value, saved)) throw new InvalidDataException(name + " 跨月基准日期重复");
+            }
+        }
         var originalDates = history["TMA"].Keys.Order().ToList();
         if (MonthlyLayout.Sheets.Any(name => !history[name].Keys.Order().SequenceEqual(originalDates)))
             throw new InvalidDataException("月度四表的业务日期集合不一致，已保留原文件，不能猜测人工值归属");
         var dates = originalDates.Append(current.Date).Distinct().Order().ToList();
         var rowNumbers = MonthlyLayout.Sheets.ToDictionary(name => name,
             name => dates.Select((date, index) => (date, number: MonthlyLayout.HeaderRows(name) + index + 1)).ToDictionary(pair => pair.date, pair => pair.number));
-        var oldDates = history.ToDictionary(pair => pair.Key, pair => pair.Value.Values.ToDictionary(row => row.OriginalRow, row => row.Date!.Value));
         var generated = dates.Where(date => date != current.Date).ToDictionary(date => date, date => Rebuild(date, history));
         generated[current.Date] = current;
         var caches = MonthlyLayout.Sheets.ToDictionary(name => name, _ => new Dictionary<string, decimal>());
@@ -60,7 +77,12 @@ internal static class MonthlyHistory
         {
             var sheet = book.Worksheet(name); var columns = Columns(name); var header = MonthlyLayout.HeaderRows(name);
             var last = sheet.LastRowUsed(XLCellsUsedOptions.Contents)?.RowNumber() ?? header;
-            if (last > header) sheet.Range(header + 1, 1, last, columns.Length).Clear(XLClearOptions.Contents);
+            if (retainBaseline != null)
+            {
+                var formattedEnd = sheet.LastRowUsed(XLCellsUsedOptions.All)?.RowNumber() ?? header;
+                if (formattedEnd > header) sheet.Rows(header + 1, formattedEnd).Delete();
+            }
+            else if (last > header) sheet.Range(header + 1, 1, last, columns.Length).Clear(XLClearOptions.Contents);
             foreach (var date in dates)
             {
                 var number = rowNumbers[name][date];
@@ -74,7 +96,7 @@ internal static class MonthlyHistory
                     if (saved.Formula.Length == 0) cell.Value = saved.Value;
                     else
                     {
-                        cell.FormulaA1 = Remap(saved.Formula, name, oldDates, rowNumbers);
+                        cell.FormulaA1 = Remap(saved.Formula, name, source!.OriginalDates, rowNumbers);
                         if (saved.Cache != null) caches[name][Address(c + 1, number)] = saved.Cache.Value;
                     }
                 }
@@ -105,7 +127,7 @@ internal static class MonthlyHistory
                 {
                     var cell = sheet.Cell(noteRow, c + 1); var saved = note.Cells[c]; cell.Style = saved.Style;
                     if (saved.Formula.Length == 0) cell.Value = saved.Value;
-                    else { cell.FormulaA1 = Remap(saved.Formula, name, oldDates, rowNumbers); if (saved.Cache != null) caches[name][Address(c + 1, noteRow)] = saved.Cache.Value; }
+                    else { cell.FormulaA1 = Remap(saved.Formula, name, note.OriginalDates, rowNumbers); if (saved.Cache != null) caches[name][Address(c + 1, noteRow)] = saved.Cache.Value; }
                 }
                 noteRow++;
             }
@@ -189,8 +211,10 @@ internal static class MonthlyHistory
         for (var i = 0; i < segments.Length; i += 2)
             segments[i] = Regex.Replace(segments[i], @"(?<![A-Za-z0-9_!])(?:(?<sheet>'(?:TMA|TMG|Total|Break down)'|TMA|TMG|Total)!)?(?<column>\$?[A-Za-z]{1,3})(?<absolute>\$?)(?<row>\d+)(?![A-Za-z0-9_(])", match =>
             {
-                var target = match.Groups["sheet"].Success ? match.Groups["sheet"].Value.Trim('\'') : sheet;
+                var requested = match.Groups["sheet"].Success ? match.Groups["sheet"].Value.Trim('\'') : sheet;
+                var target = MonthlyLayout.Sheets.Single(name => name.Equals(requested, StringComparison.OrdinalIgnoreCase));
                 if (!oldDates[target].TryGetValue(int.Parse(match.Groups["row"].Value, CultureInfo.InvariantCulture), out var date)) return match.Value;
+                if (!rows[target].ContainsKey(date)) throw new InvalidDataException("保留行公式引用已移除的历史日期，请先在Excel确认该人工值：" + target + " " + date.ToString("yyyy.MM.dd"));
                 return (match.Groups["sheet"].Success ? match.Groups["sheet"].Value + "!" : "") + match.Groups["column"].Value + match.Groups["absolute"].Value + rows[target][date];
             }, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         return string.Concat(segments);

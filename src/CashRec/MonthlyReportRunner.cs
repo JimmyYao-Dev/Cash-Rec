@@ -24,13 +24,14 @@ internal static class MonthlyReportRunner
         var directory = Path.Combine(Directory.GetParent(context.DateDirectory)!.FullName, "monthly");
         Directory.CreateDirectory(directory);
         var destination = Path.Combine(directory, $"CashRec_Breakdown_{context.BusinessDate:yyyy.MM}.xlsx");
+        using var rollover = MonthlyRollover.Resolve(context, destination, report);
         var existing = File.Exists(destination) ? destination : null;
         context.Progress?.Invoke("计算结算佣金与 Check");
         MonthlySettlementCalculator.Apply(report, tables, MonthlyWorkbookWriter.ReadManualInputs(existing, context.BusinessDate), context.Progress);
         var temporary = Path.Combine(directory, ".CashRec-Monthly-" + Guid.NewGuid().ToString("N") + ".xlsx");
         try
         {
-            MonthlyWorkbookWriter.Write(temporary, existing, report);
+            MonthlyWorkbookWriter.Write(temporary, existing, report, rollover);
             return new(destination, temporary, report);
         }
         catch { if (File.Exists(temporary)) File.Delete(temporary); throw; }
