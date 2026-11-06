@@ -37,7 +37,7 @@ internal static class MonthlyWorkbookWriter
                 var field = columns[column].Field;
                 var cell = sheet.Cell(number, column + 1);
                 // A missing previous value must also remove a previously saved DIFF.
-                if (name != "Break down" ? IsAutomaticField(field) : MonthlyBreakdownCalculator.AutomaticFields.Contains(field))
+                if (name != "Break down" ? IsAutomaticField(field) : MonthlyBreakdownCalculator.AutomaticFields.Contains(field) || MonthlySettlementCalculator.AutomaticFields.Contains(field))
                 {
                     cell.Clear(XLClearOptions.Contents);
                     caches["xl/worksheets/sheet" + sheet.Position + ".xml"].Remove(Address(cell));
@@ -58,6 +58,26 @@ internal static class MonthlyWorkbookWriter
         MarkClassificationCoverage(book, report);
         book.SaveAs(temporaryPath, new SaveOptions { EvaluateFormulasBeforeSaving = false });
         WorkbookWriter.PersistFormulaValues(temporaryPath, caches);
+    }
+
+    internal static Dictionary<string, decimal?> ReadManualInputs(string? path, DateTime date)
+    {
+        var result = MonthlySettlementCalculator.ManualFields.ToDictionary(field => field, _ => (decimal?)null);
+        if (path == null) return result;
+        using var book = new XLWorkbook(path);
+        Validate(book);
+        var sheet = book.Worksheet("Break down");
+        var rows = sheet.RowsUsed().Where(row => row.RowNumber() > MonthlyLayout.HeaderRows(sheet.Name) && CellDate(row.Cell(1)) == date).ToList();
+        if (rows.Count > 1) throw new InvalidDataException("Break down 同日人工区域存在重复业务日期，不能任选一行");
+        if (rows.Count == 0) return result;
+        foreach (var field in MonthlySettlementCalculator.ManualFields)
+        {
+            var column = Array.FindIndex(MonthlyLayout.BreakdownColumns, candidate => candidate.Field == field) + 1;
+            var cell = rows[0].Cell(column);
+            if (!cell.HasFormula && cell.Value.Type == XLDataType.Blank) continue;
+            result[field] = ExcelNumbers.Read(cell, $"Break down {date:yyyy.MM.dd} {field}");
+        }
+        return result;
     }
 
     static bool IsAutomaticField(string field) => field == "SETTLE PNL"

@@ -26,8 +26,8 @@ static void Run(string fixture, bool baselineOnly)
     var current = Path.Combine(workspace, "2026.10.25", "Needed files");
     var prior = Path.Combine(workspace, "2026.10.22", "Needed files");
     var result = ReportTaskRunner.Run(workspace, date);
-    Assert(result.MonthlyStageComplete && result.MonthlyOutput != null && !result.Complete,
-        "Monthly stage must complete without claiming downstream stages: " + string.Join(";", result.Diagnostics.Select(d => d.Message)));
+    Assert(result.MonthlyStageComplete && result.MonthlyOutput != null && result.Complete,
+        "Single-day automatic reports must complete without requiring Check to be zero: " + string.Join(";", result.Diagnostics.Select(d => d.Message)));
     using (var book = new XLWorkbook(result.MonthlyOutput!))
     {
         Assert(book.Worksheets.Select(sheet => sheet.Name).SequenceEqual(new[] { "TMA", "TMG", "Total", "Break down" }), "Exactly four monthly sheets");
@@ -50,15 +50,18 @@ static void Run(string fixture, bool baselineOnly)
         var breakdown = book.Worksheet("Break down");
         Money(book, "Break down", date, "B", 100); Money(book, "Break down", date, "C", 263);
         Money(book, "Break down", date, "D", 250); Money(book, "Break down", date, "E", -8); Money(book, "Break down", date, "F", 21);
-        foreach (var column in new[] { 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 })
-            Assert(breakdown.Cell(2, column).IsEmpty(), "Manual areas, Error and next-stage settlement/Check remain genuinely absent");
+        Money(book, "Break down", date, "H", 385); Money(book, "Break down", date, "I", -7);
+        Money(book, "Break down", date, "J", 0); Money(book, "Break down", date, "K", -25); Money(book, "Break down", date, "P", -332);
+        foreach (var column in new[] { 7, 12, 13, 14, 15 })
+            Assert(breakdown.Cell(2, column).IsEmpty(), "Manual areas and Error remain genuinely absent");
+        Assert(breakdown.Cell("P2").FormulaA1 == "F2-G2-H2-I2-J2-K2-L2-M2-N2", "Original Check subtraction formula remains unchanged");
         Assert(breakdown.Cell("G2").Style.NumberFormat.Format == "\"$\"#,##0.00;[Red]\\-\"$\"#,##0.00", "Original To LP format retained");
     }
     using (var json = JsonDocument.Parse(File.ReadAllText(result.DiagnosticPath)))
     {
-        Assert(json.RootElement.GetProperty("MonthlyStage").GetString() == "Breakdown"
+        Assert(json.RootElement.GetProperty("MonthlyStage").GetString() == "Check"
             && json.RootElement.GetProperty("MonthlyStageComplete").GetBoolean()
-            && !json.RootElement.GetProperty("Complete").GetBoolean(), "Task diagnostic distinguishes complete stage from incomplete full monthly task");
+            && json.RootElement.GetProperty("Complete").GetBoolean(), "Task completion means this automatic single-day task, not manual reconciliation");
     }
     var transactions = BalanceWorkbookReader.ReadRows(result.DailyOutput!, "TransactionExchange", ["Source", "Company", "Organization", "Transaction Type"]);
     var bankRows = transactions.Where(row => (string?)row["Source"] == "BANK BD").ToList();
@@ -106,7 +109,7 @@ static void Run(string fixture, bool baselineOnly)
         var sheet = book.Worksheet("Total"); Assert(sheet.Cell("W" + DateRow(sheet, date)).IsEmpty(), "Missing previous Pending clears stale DIFF");
         Money(book, "Total", date, "R", 80);
         var breakdown = book.Worksheet("Break down"); var breakdownRow = DateRow(breakdown, date);
-        Assert(breakdown.Cell(breakdownRow, 3).IsEmpty() && breakdown.Cell(breakdownRow, 6).IsEmpty(), "Missing source DIFF clears stale Client Bank Move and Diff");
+        Assert(breakdown.Cell(breakdownRow, 3).IsEmpty() && breakdown.Cell(breakdownRow, 6).IsEmpty() && breakdown.Cell(breakdownRow, 16).IsEmpty(), "Missing source DIFF clears stale Client Bank Move, Diff and Check");
     }
     finally { File.Move(priorBankBd + ".held", priorBankBd); }
 
@@ -302,6 +305,7 @@ static void CheckClassificationHistory(string workspace, DateTime currentDate, s
     {
         Assert(book.CustomProperties.Single(property => property.Name == "CashRecClassification").Value.ToString() == ReportPolicy.MixedClassification, "Unrecomputed history is not silently relabeled");
         Money(book, "TMA", currentDate, "N", 385); Money(book, "TMA", earlier, "N", 9999);
+        Money(book, "Break down", currentDate, "P", -323);
         Assert(book.Worksheet("Break down").Cell(DateRow(book.Worksheet("Break down"), currentDate), 15).IsEmpty(), "Error is cleared automatically without treating it as manual input");
         var total = book.Worksheet("Total");
         foreach (var column in new[] { "Q", "S", "U" }) Assert(total.Cell(column + DateRow(total, currentDate)).IsEmpty(), "Obsolete Pending difference placeholders cannot retain old automatic values");

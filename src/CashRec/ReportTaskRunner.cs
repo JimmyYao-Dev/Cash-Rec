@@ -10,11 +10,10 @@ public static class ReportTaskRunner
         var daily = ReportRunner.RunDetailed(workspace, date, progress);
         var monthly = MonthlyReportRunner.Run(daily);
         var diagnostics = daily.Result.Diagnostics.Concat(monthly.Diagnostics).ToList();
-        diagnostics.Add(new("Pending", "月度阶段", "结算佣金及 Check 尚未生成；本次结果不是完整月度核对"));
         var directory = Path.GetDirectoryName(daily.Result.DiagnosticPath)!;
         var path = Path.Combine(directory, date.ToString("yyyy.MM.dd") + "-task-" + DateTime.Now.ToString("HHmmssfff") + ".json");
         var result = new ReportTaskResult(daily.Result.OutputPath, monthly.OutputPath, path,
-            monthly.Stage, monthly.StageComplete, false, diagnostics);
+            monthly.Stage, monthly.StageComplete, daily.Result.IsComplete && monthly.StageComplete, diagnostics);
         File.WriteAllText(path, JsonSerializer.Serialize(new
         {
             Output = result.DailyOutput, result.DailyOutput, result.MonthlyOutput, result.MonthlyStage,
