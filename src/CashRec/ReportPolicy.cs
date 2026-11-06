@@ -4,4 +4,9 @@ public static class ReportPolicy
 {
     public const string EntityRules = "PRD1.6-ASIC-VFSC";
     public const string Valuation = "DatedFX-USDT1-PSPBlank0-2026-11-05";
+    public const string Classification = "BANKBD-Retail-CommentKeywords-2026-11-06";
+    public const string MixedClassification = "Mixed";
+
+    public static string ClassificationDateProperty(DateTime date) =>
+        "CashRecClassification_" + date.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
 }

@@ -32,4 +32,6 @@ The separate monthly workbook is saved beside the dated folders, at `monthly/Cas
 
 Monthly PSP Pending needs `BANK BD.xlsx` from both the selected date and the valid prior date. Each file must be the snapshot prepared for that specific date. Keep earlier snapshots in their own dated folders; do not replace an old snapshot with a later cumulative file. Missing or unreliable prior Pending leaves its DIFF blank, while a missing prior daily balance basis leaves all balance DIFF blank.
 
+Retail BANK BD classification uses Comment keywords without requiring `tf` in Rational, while retaining the established fee/PSP conflict rules. If historical dates need recalculation under the updated classification, the tool lists them. Rerun those dates using their own prepared inputs; existing dated rows, manual values and formats are preserved.
+
 Upgrading or uninstalling the program preserves the independent business workspace. Back up important results before changing files.

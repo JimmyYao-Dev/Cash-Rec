@@ -16,6 +16,8 @@ public static class BalanceWorkbookReader
     public static bool HasCurrentRules(string path) => HasCompatibleManualKeys(path) && HasProperty(path, "CashRecValuation", ReportPolicy.Valuation);
     public static bool HasCompatibleManualKeys(string path) => HasProperty(path, "CashRecRules", ReportPolicy.EntityRules);
     public static bool HasInitializedDep(string path) => HasProperty(path, "CashRecManualDEP", "1");
+    public static bool HasCurrentClassification(string path) => HasProperty(path, "CashRecClassification", ReportPolicy.Classification);
+    public static bool HasCurrentClassification(string path, DateTime date) => HasProperty(path, ReportPolicy.ClassificationDateProperty(date), ReportPolicy.Classification);
 
     static bool HasProperty(string path, string name, string expected) => ReadPackage(path, archive =>
     {

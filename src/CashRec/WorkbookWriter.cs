@@ -13,6 +13,7 @@ public static class WorkbookWriter
         using var workbook = new XLWorkbook();
         workbook.CustomProperties.Add("CashRecRules", ReportPolicy.EntityRules);
         workbook.CustomProperties.Add("CashRecValuation", ReportPolicy.Valuation);
+        workbook.CustomProperties.Add("CashRecClassification", ReportPolicy.Classification);
         workbook.CustomProperties.Add("CashRecVersion", AppVersion.Current);
         if (tables.Any(table => table.Name == "Equity" && table.Columns.Contains("Previous Date")))
             workbook.CustomProperties.Add("CashRecManualDEP", "1");

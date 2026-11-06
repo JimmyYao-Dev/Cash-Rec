@@ -15,6 +15,7 @@ internal static class MonthlyWorkbookWriter
         Validate(book);
         SetProperty(book, "CashRecMonthlyStage", MonthlyStage.Current);
         SetProperty(book, "CashRecMonthlyStageComplete", report.StageComplete ? "1" : "0");
+        SetProperty(book, "CashRecMonthlyStageDate", report.Date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture));
         SetProperty(book, "CashRecVersion", AppVersion.Current);
         var rows = MonthlyLayout.Sheets.ToDictionary(name => name, name => FindOrAddDate(book.Worksheet(name), report.Date));
         var caches = new Dictionary<string, Dictionary<string, decimal>>();
@@ -54,6 +55,7 @@ internal static class MonthlyWorkbookWriter
                 }
             }
         }
+        MarkClassificationCoverage(book, report);
         book.SaveAs(temporaryPath, new SaveOptions { EvaluateFormulasBeforeSaving = false });
         WorkbookWriter.PersistFormulaValues(temporaryPath, caches);
     }
@@ -64,6 +66,22 @@ internal static class MonthlyWorkbookWriter
         || MonthlyBalanceCalculator.BalanceFields.Any(balance => field == balance + " DIFF");
 
     static string Address(IXLCell cell) => WorkbookWriter.CellAddress(cell.Address.ColumnNumber, cell.Address.RowNumber);
+
+    static void MarkClassificationCoverage(XLWorkbook book, MonthlyReport report)
+    {
+        SetProperty(book, ReportPolicy.ClassificationDateProperty(report.Date), ReportPolicy.Classification);
+        var dates = book.Worksheets.SelectMany(sheet => sheet.RowsUsed()
+            .Where(row => row.RowNumber() > MonthlyLayout.HeaderRows(sheet.Name))
+            .Select(row => CellDate(row.Cell(1))))
+            .Where(date => date != null).Select(date => date!.Value).Distinct().Order().ToList();
+        var stale = dates.Where(date => book.CustomProperties.SingleOrDefault(property =>
+                property.Name == ReportPolicy.ClassificationDateProperty(date))?.Value.ToString() != ReportPolicy.Classification)
+            .ToList();
+        SetProperty(book, "CashRecClassification", stale.Count == 0 ? ReportPolicy.Classification : ReportPolicy.MixedClassification);
+        if (stale.Count > 0)
+            report.Diagnostics.Add(new("Warning", "历史交易分类",
+                $"{stale.Count} 个历史日期尚未按当前 Comment 关键词规则重算（{string.Join("、", stale.Take(5).Select(date => date.ToString("yyyy.MM.dd", CultureInfo.InvariantCulture)))}）；已保留原行及人工值，月度分类标记为 Mixed，请逐日重跑，不将旧自动值作为新分类结果"));
+    }
 
     static string Resolve(string expression, string sheet, IReadOnlyDictionary<string, int> rows) =>
         Regex.Replace(expression, @"\[([^\]]+)\]", match =>
