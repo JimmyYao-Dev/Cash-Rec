@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.Json;
 
 namespace CashRec;
 
@@ -15,16 +14,16 @@ public static class ReportRunner
         using var output = daily.PreparedOutput;
         using var unmatched = daily.Context == null ? null : UnmatchedManualReport.Prepare(daily.Context.DateDirectory,
             Guid.NewGuid().ToString("N"), daily.Context.UnmatchedManual);
-        if (output == null) return Finish(null, daily.Result.DiagnosticPath, false, daily.Result.Diagnostics);
+        if (output == null) return Finish(null, daily.Result.DiagnosticPath!, false, daily.Result.Diagnostics);
         try
         {
             OutputTransaction.Commit(unmatched == null ? [output] : [output, unmatched], new TransactionStatus());
-            return Finish(output.Destination, daily.Result.DiagnosticPath, daily.Result.IsComplete, daily.Result.Diagnostics);
+            return Finish(output.Destination, daily.Result.DiagnosticPath!, daily.Result.IsComplete, daily.Result.Diagnostics);
         }
         catch (Exception error)
         {
             daily.Result.Diagnostics.Add(new("Error", "保存基础报表", error.Message));
-            return Finish(null, daily.Result.DiagnosticPath, false, daily.Result.Diagnostics);
+            return Finish(null, daily.Result.DiagnosticPath!, false, daily.Result.Diagnostics);
         }
     }
 
@@ -88,7 +87,15 @@ public static class ReportRunner
     }
     static RunResult Finish(string? output, string path, bool complete, List<Diagnostic> diagnostics)
     {
-        File.WriteAllText(path, JsonSerializer.Serialize(new { Output = output, Complete = complete, Diagnostics = diagnostics }, new JsonSerializerOptions { WriteIndented = true }));
-        return new(output, path, complete, diagnostics);
+        try
+        {
+            DiagnosticRecords.Write(path, new { Output = output, Complete = complete, DiagnosticPath = path, DiagnosticWritten = true, DiagnosticAttemptedPath = path, Diagnostics = diagnostics });
+            return new(output, path, complete, diagnostics, DiagnosticAttemptedPath: path);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(new("Error", "任务记录", $"任务记录未保存：{path}；{error.Message}", DiagnosticCode.DiagnosticWriteFailed));
+            return new(output, null, false, diagnostics, false, path);
+        }
     }
 }

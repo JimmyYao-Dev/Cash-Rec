@@ -1,9 +1,8 @@
-using System.Text.Json;
-
 namespace CashRec;
 
 public sealed record BatchDayResult(DateTime Date, string Status, bool Blocked, string? DailyOutput,
-    string? MonthlyOutput, string DiagnosticPath, List<Diagnostic> Diagnostics);
+    string? MonthlyOutput, string? DiagnosticPath, List<Diagnostic> Diagnostics,
+    TransactionStatus? Transaction = null, bool DiagnosticWritten = true, string? DiagnosticAttemptedPath = null);
 
 public sealed class BatchRunResult(string workspace, DateTime start, DateTime end, string diagnosticPath)
 {
@@ -13,7 +12,9 @@ public sealed class BatchRunResult(string workspace, DateTime start, DateTime en
     public string ResultsDirectory => Workspace;
     public DateTime StartDate { get; } = start.Date;
     public DateTime EndDate { get; } = end.Date;
-    public string DiagnosticPath { get; } = diagnosticPath;
+    public string? DiagnosticPath { get; internal set; } = diagnosticPath;
+    public string DiagnosticAttemptedPath { get; } = diagnosticPath;
+    public bool DiagnosticWritten { get; internal set; } = true;
     public string Status { get; internal set; } = "Failed";
     public bool Complete => Status == "Success";
     public List<BatchDayResult> Days { get; } = [];
@@ -52,11 +53,12 @@ public static class ReportBatchRunner
                     var missing = errors.Count > 0 && errors.All(diagnostic => diagnostic.Code is DiagnosticCode.MissingInput or DiagnosticCode.MissingPspDate);
                     var status = task.Complete ? "Success" : task.DailyOutput != null ? "Partial" : missing ? "Missing" : "Failed";
                     var blocked = task.Diagnostics.Any(diagnostic => diagnostic.Code is DiagnosticCode.MissingPriorBasis or DiagnosticCode.MissingPriorKey or DiagnosticCode.MissingPriorPending);
-                    day = new(date, status, blocked, task.DailyOutput, task.MonthlyOutput, task.DiagnosticPath, task.Diagnostics);
+                    day = new(date, status, blocked, task.DailyOutput, task.MonthlyOutput, task.DiagnosticPath, task.Diagnostics,
+                        task.Transaction, task.DiagnosticWritten, task.DiagnosticAttemptedPath);
                 }
                 catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
                 {
-                    day = new(date, "Failed", false, null, null, "", [new("Error", "报表任务", error.Message)]);
+                    day = new(date, "Failed", false, null, null, null, [new("Error", "报表任务", error.Message)], DiagnosticWritten: false);
                 }
                 result.Days.Add(day);
                 completed?.Invoke(day);
@@ -65,10 +67,11 @@ public static class ReportBatchRunner
                 : result.PublishedOutputs.Count > 0 ? "Partial"
                 : result.Days.All(day => day.Status == "Missing") ? "Missing" : "Failed";
         }
-        try { File.WriteAllText(path, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true })); }
+        try { DiagnosticRecords.Write(path, result); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            result.Diagnostics.Add(new("Error", "范围记录", "无法保存范围记录：" + error.Message));
+            result.DiagnosticWritten = false; result.DiagnosticPath = null;
+            result.Diagnostics.Add(new("Error", "范围记录", $"范围记录未保存：{path}；{error.Message}", DiagnosticCode.DiagnosticWriteFailed));
             result.Status = result.PublishedOutputs.Count > 0 ? "Partial" : "Failed";
         }
         return result;

@@ -19,6 +19,7 @@ from openpyxl import load_workbook
 
 import generate_monthly_fixtures as monthly
 from excel_style_signature import cell_style_signature
+from xlsx_xml import validate_compatibility_prefixes
 
 STOCKS = {"2026-10-31": (100, 200), "2026-11-02": (130, 220), "2026-11-03": (135, 230)}
 PRIOR = {"2026-10-31": "2026-10-25", "2026-11-01": "2026-10-31", "2026-11-02": "2026-10-31", "2026-11-03": "2026-11-02"}
@@ -31,20 +32,6 @@ def load(path: Path) -> dict:
 
 def write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def validate_compatibility_prefixes(data: bytes) -> None:
-    pending, scopes = [], [{}]
-    compatibility = "http://schemas.openxmlformats.org/markup-compatibility/2006"
-    for event, node in ET.iterparse(io.BytesIO(data), events=("start-ns", "start", "end")):
-        if event == "start-ns": pending.append(node)
-        elif event == "start":
-            scope = {**scopes[-1], **dict(pending)}; pending.clear(); scopes.append(scope)
-            names = node.attrib.get("{"+compatibility+"}Ignorable", "").split()
-            if node.tag == "{"+compatibility+"}Choice": names += node.attrib.get("Requires", "").split()
-            if any(name not in scope for name in names):
-                raise ValueError("Synthetic XML preparation lost a compatibility namespace prefix declaration.")
-        else: scopes.pop()
 
 
 def initialize(workspace: Path, partial: bool = False, include_month_start: bool = False) -> dict:

@@ -5,14 +5,13 @@ import argparse
 import io
 import json
 import posixpath
-import re
 from datetime import datetime
 from pathlib import Path
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
 from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string
+from xlsx_xml import numeric_cells
 
 
 def prepare(edited: Path, workspace: Path, business_date: str) -> dict:
@@ -41,7 +40,7 @@ def prepare(edited: Path, workspace: Path, business_date: str) -> dict:
     book.close()
     cells={name:{f"{c}{rows[name]}":value for c,value in [("Q",666),("S",777),("U",888)]} for name in ["TMA","TMG","Total"]}
     cells["Break down"]={f"O{row}":17}
-    ns={"s":"http://schemas.openxmlformats.org/spreadsheetml/2006/main"};uri=ns["s"]
+    ns={"s":"http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     target=workspace/"monthly"/("CashRec_Breakdown_"+datetime.fromisoformat(business_date).strftime("%Y.%m")+".xlsx")
     if target.resolve()==edited:raise ValueError("Edited evidence copy must be preserved.")
     target.parent.mkdir(parents=True,exist_ok=True)
@@ -57,18 +56,7 @@ def prepare(edited: Path, workspace: Path, business_date: str) -> dict:
             for item in archive.infolist():
                 data=archive.read(item.filename);name=parts.get(item.filename)
                 if name in cells:
-                    xml=ET.fromstring(data);body=xml.find("s:sheetData",ns)
-                    for address,value in cells[name].items():
-                        number=re.search(r"[0-9]+",address).group()
-                        line=body.find(f"s:row[@r='{number}']",ns)
-                        if line is None:raise ValueError("Synthetic business row is missing.")
-                        cell=line.find(f"s:c[@r='{address}']",ns)
-                        if cell is None:cell=ET.SubElement(line,f"{{{uri}}}c",{"r":address})
-                        cell.attrib.pop("t",None)
-                        for child in list(cell):cell.remove(child)
-                        ET.SubElement(cell,f"{{{uri}}}v").text=str(value)
-                        line[:]=sorted(line,key=lambda node:column_index_from_string(re.match(r"[A-Z]+",node.attrib["r"]).group()))
-                    data=ET.tostring(xml,encoding="utf-8",xml_declaration=True)
+                    data=numeric_cells(data,cells[name])
                 output.writestr(item,data)
     oracle_path.write_text(json.dumps(oracle,indent=2)+"\n",encoding="utf-8")
     result={"synthetic_only":True,"precondition_only":True,"source_owned_excel_copy":str(edited),"destination":str(target),"stale_cells":cells,"manual_values":oracle["manual_values"],"business_acceptance_executed":False}

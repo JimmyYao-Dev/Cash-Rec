@@ -28,6 +28,7 @@ public sealed class MonthlyReport(DateTime date)
 public sealed record MonthlyRunResult(string? OutputPath, string Stage, bool StageComplete,
     List<Diagnostic> Diagnostics);
 
-public sealed record ReportTaskResult(string? DailyOutput, string? MonthlyOutput, string DiagnosticPath,
+public sealed record ReportTaskResult(string? DailyOutput, string? MonthlyOutput, string? DiagnosticPath,
     string MonthlyStage, bool MonthlyStageComplete, bool Complete, List<Diagnostic> Diagnostics,
-    TransactionStatus? Transaction = null, string? UnmatchedManualPath = null, int UnmatchedManualCount = 0);
+    TransactionStatus? Transaction = null, string? UnmatchedManualPath = null, int UnmatchedManualCount = 0,
+    bool DiagnosticWritten = true, string? DiagnosticAttemptedPath = null);

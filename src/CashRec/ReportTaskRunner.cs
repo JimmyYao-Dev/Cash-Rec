@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace CashRec;
 
 /// <summary>The installed GUI's single task; daily and monthly states stay explicit.</summary>
@@ -11,7 +9,7 @@ public static class ReportTaskRunner
         var diagnostics = new List<Diagnostic>();
         var transaction = new TransactionStatus();
         var directory = Path.GetDirectoryName(ReportRunner.DiagnosticPath(workspace, date))!;
-        var path = Path.Combine(directory, date.ToString("yyyy.MM.dd") + "-task-" + DateTime.Now.ToString("HHmmssfff") + ".json");
+        var path = Path.Combine(directory, date.ToString("yyyy.MM.dd") + "-task-" + transaction.Id + ".json");
         DailyRunArtifacts? daily = null;
         PreparedMonthlyOutput? monthly = null;
         PreparedFile? trace = null, unmatched = null;
@@ -67,16 +65,24 @@ public static class ReportTaskRunner
         var result = new ReportTaskResult(committed ? daily!.PreparedOutput!.Destination : null, committed ? monthly!.Destination : null, path,
             MonthlyStage.Current, committed && monthly!.Report.StageComplete,
             committed && daily!.Result.IsComplete && monthly!.Report.StageComplete, diagnostics, transaction,
-            committed ? unmatched?.Destination : null, entries.Count);
-        File.WriteAllText(path, JsonSerializer.Serialize(new
+            committed ? unmatched?.Destination : null, entries.Count, DiagnosticAttemptedPath: path);
+        try
         {
-            Output = result.DailyOutput, result.DailyOutput, result.MonthlyOutput, result.MonthlyStage,
-            result.MonthlyStageComplete, result.Complete, DailyComplete = committed && daily!.Result.IsComplete,
-            Classification = ReportPolicy.Classification,
-            result.Transaction, result.UnmatchedManualPath, result.UnmatchedManualCount,
-            RetainedOutputs = !committed ? retained : [],
-            result.Diagnostics,
-        }, new JsonSerializerOptions { WriteIndented = true }));
+            DiagnosticRecords.Write(path, new
+            {
+                Output = result.DailyOutput, result.DailyOutput, result.MonthlyOutput, result.MonthlyStage,
+                result.MonthlyStageComplete, result.Complete, DailyComplete = committed && daily!.Result.IsComplete,
+                Classification = ReportPolicy.Classification,
+                result.Transaction, result.UnmatchedManualPath, result.UnmatchedManualCount,
+                result.DiagnosticPath, result.DiagnosticWritten, result.DiagnosticAttemptedPath,
+                RetainedOutputs = !committed ? retained : [], result.Diagnostics,
+            });
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(new("Error", "任务记录", $"{(committed ? "报表已提交；" : "")}任务记录未保存：{path}；{error.Message}", DiagnosticCode.DiagnosticWriteFailed));
+            result = result with { Complete = false, DiagnosticWritten = false, DiagnosticPath = null };
+        }
         return result;
     }
 }

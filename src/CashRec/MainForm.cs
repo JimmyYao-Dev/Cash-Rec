@@ -166,7 +166,7 @@ public sealed class MainForm : Form
                 statusText.Text = "范围工作目录：" + batch.Workspace + Environment.NewLine
                     + string.Join(Environment.NewLine, batch.Days.Select(DayText)) + Environment.NewLine
                     + string.Join(Environment.NewLine, batch.Diagnostics.Select(diagnostic => $"[{diagnostic.Severity}] {diagnostic.Source}：{diagnostic.Message}"))
-                    + Environment.NewLine + "范围记录：" + batch.DiagnosticPath;
+                    + (batch.DiagnosticWritten ? Environment.NewLine + "范围记录：" + batch.DiagnosticPath : Environment.NewLine + "范围记录未保存");
                 var counts = batch.Counts;
                 SetResult(batch.ResultsDirectory, batch.Diagnostics.Any(diagnostic => diagnostic.Code == DiagnosticCode.InvalidDateRange)
                     ? "日期范围无效，未执行任务"
@@ -177,8 +177,10 @@ public sealed class MainForm : Form
             ShowDiagnostics(result.Diagnostics);
             if (result.DailyOutput != null) statusText.AppendText(Environment.NewLine + "每日基础表：" + result.DailyOutput);
             if (result.MonthlyOutput != null) statusText.AppendText(Environment.NewLine + "月度报表：" + result.MonthlyOutput);
-            SetResult(Path.GetDirectoryName(result.MonthlyOutput ?? result.DailyOutput ?? result.DiagnosticPath)!,
-                result.Complete ? "报表已生成；请在 Excel 完成人工核对"
+            var savedPath = result.MonthlyOutput ?? result.DailyOutput ?? result.DiagnosticPath;
+            SetResult(savedPath == null ? workspace : Path.GetDirectoryName(savedPath)!,
+                !result.DiagnosticWritten ? result.DailyOutput != null ? "报表已生成；任务记录未保存，请查看本次提示" : "未生成报表；任务记录未保存，请查看本次提示"
+                    : result.Complete ? "报表已生成；请在 Excel 完成人工核对"
                     : result.DailyOutput != null ? "结果不完整，请查看诊断记录" : "未生成报表，请处理诊断中的问题");
         }
         catch (Exception error) { statusText.Text = "处理失败：" + error.Message; resultLabel.Text = "处理失败"; }
@@ -203,7 +205,7 @@ public sealed class MainForm : Form
         + string.Join(Environment.NewLine, day.Diagnostics.Select(diagnostic => $"[{diagnostic.Severity}] {diagnostic.Source}：{diagnostic.Message}"))
         + (day.DailyOutput == null ? "" : Environment.NewLine + "每日基础表：" + day.DailyOutput)
         + (day.MonthlyOutput == null ? "" : Environment.NewLine + "月度报表：" + day.MonthlyOutput)
-        + (day.DiagnosticPath.Length == 0 ? "" : Environment.NewLine + "日期记录：" + day.DiagnosticPath);
+        + (day.DiagnosticWritten && day.DiagnosticPath != null ? Environment.NewLine + "日期记录：" + day.DiagnosticPath : "");
 
     void SetResult(string directory, string message)
     {

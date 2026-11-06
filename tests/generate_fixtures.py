@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 from zipfile import ZipFile
 
 from openpyxl import Workbook, load_workbook
+from xlsx_xml import numeric_cells
 
 
 PREVIOUS = datetime(2026, 10, 22)
@@ -83,17 +84,7 @@ def cache_formula_numbers(path: Path, sheet_name: str, values: dict[str, int]) -
         relationships = ElementTree.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
         target = next(r.attrib["Target"] for r in relationships if r.attrib["Id"] == sheet.attrib[relationship])
         part = target.lstrip("/") if target.startswith("/") else posixpath.normpath("xl/" + target)
-        document = ElementTree.fromstring(archive.read(part))
-        for cell in document.findall(".//s:sheetData/s:row/s:c", ns):
-            if cell.attrib["r"] not in values:
-                continue
-            assert cell.find("s:f", ns) is not None, "Cache target must be a formula cell"
-            cached = cell.find("s:v", ns)
-            if cached is None:
-                cached = ElementTree.SubElement(cell, "{" + ns["s"] + "}v")
-            cached.text = str(values[cell.attrib["r"]])
-            cell.attrib.pop("t", None)
-        modified = ElementTree.tostring(document, encoding="utf-8", xml_declaration=True)
+        modified = numeric_cells(archive.read(part), values, formula_cache=True)
         with ZipFile(path, "w") as output:
             for entry in archive.infolist():
                 output.writestr(entry, modified if entry.filename == part else archive.read(entry))

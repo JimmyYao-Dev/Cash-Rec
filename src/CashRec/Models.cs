@@ -9,6 +9,7 @@ public static class DiagnosticCode
     public const string MissingPriorKey = "MissingPriorKey";
     public const string MissingPriorPending = "MissingPriorPending";
     public const string InvalidDateRange = "InvalidDateRange";
+    public const string DiagnosticWriteFailed = "DiagnosticWriteFailed";
 }
 public sealed record FormulaCell(string Formula, decimal CalculatedValue);
 
@@ -58,8 +59,8 @@ public sealed record PreflightResult(DateTime BusinessDate, string DateDirectory
     public bool CanRun => !Diagnostics.Any(d => d.Severity == "Error");
 }
 
-public sealed record RunResult(string? OutputPath, string DiagnosticPath, bool IsComplete,
-    List<Diagnostic> Diagnostics);
+public sealed record RunResult(string? OutputPath, string? DiagnosticPath, bool IsComplete,
+    List<Diagnostic> Diagnostics, bool DiagnosticWritten = true, string? DiagnosticAttemptedPath = null);
 
 internal sealed record DailyRunArtifacts(RunResult Result, RunContext? Context, IList<ReportTable> Tables, PreparedFile? PreparedOutput = null);
 
